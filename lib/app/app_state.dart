@@ -46,7 +46,11 @@ class AppState extends ChangeNotifier {
 
   AppData get data => _data;
   bool get initialized => _initialized;
-  bool get hasFamily => _data.family != null && !_data.family!.isDeleted;
+  bool get hasFamily =>
+      _data.family != null &&
+      !_data.family!.isDeleted &&
+      _data.currentMember != null &&
+      !_data.currentMember!.isDeleted;
   bool get online => _online;
   bool get syncing => _syncing;
   bool get backendConfigured => _syncService != null;
@@ -245,6 +249,62 @@ class AppState extends ChangeNotifier {
       syncStatus: SyncStatus.pending,
     );
     _data = _data.copyWith(members: [..._data.members, member]);
+    await _persist(scheduleSync: true);
+  }
+
+  Future<void> leaveFamily() async {
+    final member = _data.currentMember;
+    final family = _data.family;
+    if (member == null || family == null) {
+      await resetLocalData();
+      return;
+    }
+
+    if (family.syncStatus != SyncStatus.synced || _syncService == null) {
+      await _resetFamilyDataAfterLeaving();
+      return;
+    }
+
+    if (!_online) {
+      throw const AppActionException(
+        'Opuszczenie rodziny wymaga internetu, żeby serwer też usunął Cię z rodziny.',
+      );
+    }
+
+    final removalData = _dataWithRemovedMember(
+      data: _data,
+      memberId: member.id,
+      now: DateTime.now().toUtc(),
+    );
+    try {
+      await _syncService!.sync(removalData);
+      await _resetFamilyDataAfterLeaving();
+    } catch (error) {
+      throw AppActionException('Nie udało się opuścić rodziny: $error');
+    }
+  }
+
+  Future<void> removeFamilyMember(Member member) async {
+    final currentMember = _data.currentMember;
+    if (currentMember == null || _data.family == null) {
+      return;
+    }
+    if (!isFamilyCreator) {
+      throw const AppActionException(
+        'Tylko twórca rodziny może wyrzucać osoby.',
+      );
+    }
+    if (member.id == currentMember.id) {
+      throw const AppActionException(
+        'Nie możesz wyrzucić siebie. Użyj opcji opuszczenia rodziny.',
+      );
+    }
+
+    _data = _dataWithRemovedMember(
+      data: _data,
+      memberId: member.id,
+      now: DateTime.now().toUtc(),
+    );
     await _persist(scheduleSync: true);
   }
 
@@ -812,6 +872,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _resetFamilyDataAfterLeaving() async {
+    final previousServerUrl = _serverUrl;
+    await resetLocalData();
+    if (previousServerUrl != _serverUrl) {
+      await updateServerUrl(previousServerUrl);
+    }
+  }
+
   @override
   void dispose() {
     _connectivitySubscription?.cancel();
@@ -861,6 +929,48 @@ class AppState extends ChangeNotifier {
       );
     }
     return true;
+  }
+
+  AppData _dataWithRemovedMember({
+    required AppData data,
+    required String memberId,
+    required DateTime now,
+  }) {
+    final updatedMembers = data.members
+        .map(
+          (entry) => entry.id == memberId
+              ? entry.copyWith(
+                  isDeleted: true,
+                  updatedAt: now,
+                  syncStatus: SyncStatus.pending,
+                )
+              : entry,
+        )
+        .toList();
+    final updatedCurrentMember = data.currentMember?.id == memberId
+        ? data.currentMember!.copyWith(
+            isDeleted: true,
+            updatedAt: now,
+            syncStatus: SyncStatus.pending,
+          )
+        : data.currentMember;
+    final updatedEvents = data.calendarEvents
+        .map(
+          (entry) => entry.memberId == memberId && !entry.isDeleted
+              ? entry.copyWith(
+                  isDeleted: true,
+                  updatedAt: now,
+                  syncStatus: SyncStatus.pending,
+                )
+              : entry,
+        )
+        .toList();
+
+    return data.copyWith(
+      currentMember: updatedCurrentMember,
+      members: updatedMembers,
+      calendarEvents: updatedEvents,
+    );
   }
 
   List<RecipeIngredient> _ingredientEntities(

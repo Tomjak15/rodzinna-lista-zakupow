@@ -46,6 +46,7 @@ web/                   Manifest i konfiguracja PWA
 - Kod rodziny do kopiowania i wysyłania innym osobom.
 - Wspólna lista zakupów dla osób z tym samym kodem rodziny.
 - Dołączanie po kodzie jest potwierdzane przez serwer: aplikacja najpierw pobiera prawdziwą rodzinę po kodzie, zapisuje członka pod jej `familyId`, a dopiero potem wpuszcza użytkownika do aplikacji.
+- Członek może opuścić rodzinę, a twórca rodziny może wyrzucić inne osoby.
 - Lista zakupów w prostym stylu Listonic: szybkie wpisywanie i podpowiedzi produktów.
 - Dodawanie, edycja, usuwanie, zaznaczanie i odznaczanie produktów.
 - Automatyczne łączenie tego samego produktu z tą samą jednostką.

@@ -11,6 +11,7 @@ class FamilyScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = AppScope.of(context);
     final family = appState.data.family;
+    final currentMember = appState.data.currentMember;
     final members = appState.data.activeMembers
       ..sort((a, b) => a.name.compareTo(b.name));
 
@@ -65,6 +66,15 @@ class FamilyScreen extends StatelessWidget {
                     ),
                   ],
                 ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: () => _confirmLeaveFamily(context),
+                  icon: const Icon(Icons.logout),
+                  label: const Text('Opuść rodzinę'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                ),
               ],
             ),
           ),
@@ -76,7 +86,14 @@ class FamilyScreen extends StatelessWidget {
             style: Theme.of(context).textTheme.titleMedium,
           ),
         ),
-        ...members.map((member) => _MemberTile(member: member)),
+        ...members.map(
+          (member) => _MemberTile(
+            member: member,
+            canRemove:
+                appState.isFamilyCreator && member.id != currentMember?.id,
+            onRemove: () => _confirmRemoveMember(context, member),
+          ),
+        ),
       ],
     );
   }
@@ -89,12 +106,86 @@ class FamilyScreen extends StatelessWidget {
       ).showSnackBar(const SnackBar(content: Text('Kod rodziny skopiowany')));
     }
   }
+
+  Future<void> _confirmLeaveFamily(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Opuścić rodzinę?'),
+        content: const Text(
+          'Po opuszczeniu rodziny wrócisz do ekranu startowego. Dane rodziny znikną z tego urządzenia.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Anuluj'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Opuść'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+    try {
+      await AppScope.of(context).leaveFamily();
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+
+  Future<void> _confirmRemoveMember(BuildContext context, Member member) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Wyrzucić osobę?'),
+        content: Text(
+          '${member.name} straci dostęp do tej rodziny po następnej synchronizacji.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Anuluj'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Wyrzuć'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+    try {
+      await AppScope.of(context).removeFamilyMember(member);
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
 }
 
 class _MemberTile extends StatelessWidget {
-  const _MemberTile({required this.member});
+  const _MemberTile({
+    required this.member,
+    required this.canRemove,
+    required this.onRemove,
+  });
 
   final Member member;
+  final bool canRemove;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -107,7 +198,18 @@ class _MemberTile extends StatelessWidget {
         leading: CircleAvatar(child: Text(_avatarText(member))),
         title: Text(member.name),
         subtitle: details.isEmpty ? null : Text(details),
-        trailing: _FamilySyncIcon(status: member.syncStatus),
+        trailing: Wrap(
+          spacing: 2,
+          children: [
+            _FamilySyncIcon(status: member.syncStatus),
+            if (canRemove)
+              IconButton(
+                tooltip: 'Wyrzuć z rodziny',
+                onPressed: onRemove,
+                icon: const Icon(Icons.person_remove_outlined),
+              ),
+          ],
+        ),
       ),
     );
   }
