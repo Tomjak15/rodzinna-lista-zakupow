@@ -13,6 +13,93 @@ class ShoppingScreen extends StatefulWidget {
 }
 
 class _ShoppingScreenState extends State<ShoppingScreen> {
+  @override
+  Widget build(BuildContext context) {
+    final appState = AppScope.of(context);
+    final items = [...appState.data.activeShoppingItems]
+      ..sort((a, b) {
+        if (a.isPurchased != b.isPurchased) {
+          return a.isPurchased ? 1 : -1;
+        }
+        return a.name.compareTo(b.name);
+      });
+    final openItems = items.where((item) => !item.isPurchased).toList();
+    final purchasedItems = items.where((item) => item.isPurchased).toList();
+
+    return Scaffold(
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+        children: [
+          if (items.isEmpty)
+            const _EmptyShoppingList()
+          else ...[
+            _ShoppingSection(title: 'Do kupienia', count: openItems.length),
+            ...openItems.map(
+              (item) => _ShoppingRow(
+                item: item,
+                onEdit: () => _openProductDialog(context, item: item),
+              ),
+            ),
+            if (purchasedItems.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _ShoppingSection(title: 'Kupione', count: purchasedItems.length),
+              ...purchasedItems.map(
+                (item) => _ShoppingRow(
+                  item: item,
+                  onEdit: () => _openProductDialog(context, item: item),
+                ),
+              ),
+            ],
+          ],
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.large(
+        tooltip: 'Dodaj produkt',
+        onPressed: () => _openAddProductSheet(context),
+        child: const Icon(Icons.add, size: 38),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    );
+  }
+
+  Future<void> _openProductDialog(
+    BuildContext context, {
+    required ShoppingItem item,
+  }) async {
+    final draft = await showDialog<_ProductDraft>(
+      context: context,
+      builder: (_) => _ProductDialog(item: item),
+    );
+    if (draft == null || !context.mounted) {
+      return;
+    }
+    final appState = AppScope.of(context);
+    await appState.updateShoppingItem(
+      item: item,
+      name: draft.name,
+      quantity: draft.quantity,
+      unit: draft.unit,
+    );
+  }
+
+  Future<void> _openAddProductSheet(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => const _AddProductSheet(),
+    );
+  }
+}
+
+class _AddProductSheet extends StatefulWidget {
+  const _AddProductSheet();
+
+  @override
+  State<_AddProductSheet> createState() => _AddProductSheetState();
+}
+
+class _AddProductSheetState extends State<_AddProductSheet> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _quantityController = TextEditingController(text: '1');
@@ -35,124 +122,101 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final appState = AppScope.of(context);
-    final items = [...appState.data.activeShoppingItems]
-      ..sort((a, b) {
-        if (a.isPurchased != b.isPurchased) {
-          return a.isPurchased ? 1 : -1;
-        }
-        return a.name.compareTo(b.name);
-      });
-    final openItems = items.where((item) => !item.isPurchased).toList();
-    final purchasedItems = items.where((item) => item.isPurchased).toList();
+    final query = _nameController.text.trim();
+    final suggestions = _visibleSuggestions(AppScope.of(context).data, query);
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-      children: [
-        _buildQuickAdd(context),
-        const SizedBox(height: 12),
-        if (items.isEmpty)
-          const _EmptyShoppingList()
-        else ...[
-          _ShoppingSection(title: 'Do kupienia', count: openItems.length),
-          ...openItems.map(
-            (item) => _ShoppingRow(
-              item: item,
-              onEdit: () => _openProductDialog(context, item: item),
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Dodaj produkt',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Zamknij',
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
             ),
-          ),
-          if (purchasedItems.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _ShoppingSection(title: 'Kupione', count: purchasedItems.length),
-            ...purchasedItems.map(
-              (item) => _ShoppingRow(
-                item: item,
-                onEdit: () => _openProductDialog(context, item: item),
-              ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextFormField(
+                    controller: _nameController,
+                    autofocus: true,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: 'Produkt',
+                      prefixIcon: Icon(Icons.search),
+                    ),
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'Wpisz produkt'
+                        : null,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 82,
+                  child: TextFormField(
+                    controller: _quantityController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(labelText: 'Ilość'),
+                    validator: (value) =>
+                        _parseQuantity(value ?? '') <= 0 ? 'Ilość' : null,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 78,
+                  child: TextFormField(
+                    controller: _unitController,
+                    decoration: const InputDecoration(labelText: 'Jedn.'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  tooltip: 'Dodaj',
+                  onPressed: _addFromFields,
+                  icon: const Icon(Icons.add),
+                ),
+              ],
             ),
-          ],
-        ],
-      ],
-    );
-  }
-
-  Widget _buildQuickAdd(BuildContext context) {
-    final appData = AppScope.of(context).data;
-    final visibleSuggestions = _visibleSuggestions(appData);
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: TextFormField(
-                      controller: _nameController,
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: 'Produkt',
-                        prefixIcon: Icon(Icons.search),
-                      ),
-                      validator: (value) =>
-                          value == null || value.trim().isEmpty
-                          ? 'Wpisz produkt'
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 86,
-                    child: TextFormField(
-                      controller: _quantityController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(labelText: 'Ilość'),
-                      validator: (value) =>
-                          _parseQuantity(value ?? '') <= 0 ? 'Ilość' : null,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 86,
-                    child: TextFormField(
-                      controller: _unitController,
-                      decoration: const InputDecoration(labelText: 'Jedn.'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    tooltip: 'Dodaj',
-                    onPressed: () => _addFromFields(context),
-                    icon: const Icon(Icons.add),
-                  ),
-                ],
-              ),
+            if (query.isNotEmpty) ...[
               const SizedBox(height: 12),
               Text(
-                '${visibleSuggestions.length} podpowiedzi',
+                suggestions.isEmpty
+                    ? 'Brak podpowiedzi'
+                    : '${suggestions.length} podpowiedzi',
                 style: Theme.of(context).textTheme.labelMedium,
               ),
               const SizedBox(height: 8),
               ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 220),
+                constraints: const BoxConstraints(maxHeight: 260),
                 child: SingleChildScrollView(
                   child: Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: visibleSuggestions
+                    children: suggestions
                         .map(
                           (suggestion) => ActionChip(
                             avatar: const Icon(Icons.add, size: 16),
                             label: Text(suggestion.name),
-                            onPressed: () =>
-                                _addSuggestion(context, suggestion),
+                            onPressed: () => _addSuggestion(suggestion),
                           ),
                         )
                         .toList(),
@@ -160,21 +224,20 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                 ),
               ),
             ],
-          ),
+          ],
         ),
       ),
     );
   }
 
-  List<ProductSuggestion> _visibleSuggestions(AppData data) {
-    final query = _nameController.text.trim().toLowerCase();
-    final suggestions = _allSuggestions(data);
-    if (query.isEmpty) {
-      return suggestions;
+  List<ProductSuggestion> _visibleSuggestions(AppData data, String query) {
+    final cleanQuery = query.trim().toLowerCase();
+    if (cleanQuery.isEmpty) {
+      return [];
     }
-    return suggestions
-        .where((item) => item.name.toLowerCase().contains(query))
-        .toList();
+    return _allSuggestions(
+      data,
+    ).where((item) => item.name.toLowerCase().contains(cleanQuery)).toList();
   }
 
   List<ProductSuggestion> _allSuggestions(AppData data) {
@@ -217,7 +280,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
     return result;
   }
 
-  Future<void> _addFromFields(BuildContext context) async {
+  Future<void> _addFromFields() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -228,40 +291,22 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
           ? 'szt.'
           : _unitController.text.trim(),
     );
-    _nameController.clear();
-    _quantityController.text = '1';
-    _unitController.text = 'szt.';
+    _clearForNextProduct();
   }
 
-  Future<void> _addSuggestion(
-    BuildContext context,
-    ProductSuggestion suggestion,
-  ) async {
+  Future<void> _addSuggestion(ProductSuggestion suggestion) async {
     await AppScope.of(context).addShoppingItem(
       name: suggestion.name,
       quantity: suggestion.quantity,
       unit: suggestion.unit,
     );
+    _clearForNextProduct();
   }
 
-  Future<void> _openProductDialog(
-    BuildContext context, {
-    required ShoppingItem item,
-  }) async {
-    final draft = await showDialog<_ProductDraft>(
-      context: context,
-      builder: (_) => _ProductDialog(item: item),
-    );
-    if (draft == null || !context.mounted) {
-      return;
-    }
-    final appState = AppScope.of(context);
-    await appState.updateShoppingItem(
-      item: item,
-      name: draft.name,
-      quantity: draft.quantity,
-      unit: draft.unit,
-    );
+  void _clearForNextProduct() {
+    _nameController.clear();
+    _quantityController.text = '1';
+    _unitController.text = 'szt.';
   }
 
   void _refreshSuggestions() {
