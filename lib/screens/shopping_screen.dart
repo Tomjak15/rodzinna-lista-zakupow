@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../app/app_scope.dart';
+import '../data/product_catalog.dart';
 import '../models/entities.dart';
 
 class ShoppingScreen extends StatefulWidget {
@@ -16,27 +17,6 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
   final _nameController = TextEditingController();
   final _quantityController = TextEditingController(text: '1');
   final _unitController = TextEditingController(text: 'szt.');
-
-  static const _suggestions = [
-    _SuggestionProduct('Chleb', 1, 'szt.'),
-    _SuggestionProduct('Mleko', 1, 'l'),
-    _SuggestionProduct('Jajka', 10, 'szt.'),
-    _SuggestionProduct('Masło', 1, 'szt.'),
-    _SuggestionProduct('Ser', 200, 'g'),
-    _SuggestionProduct('Szynka', 200, 'g'),
-    _SuggestionProduct('Jogurt', 1, 'szt.'),
-    _SuggestionProduct('Ryż', 1, 'kg'),
-    _SuggestionProduct('Makaron', 1, 'op.'),
-    _SuggestionProduct('Ziemniaki', 1, 'kg'),
-    _SuggestionProduct('Marchew', 500, 'g'),
-    _SuggestionProduct('Pomidory', 500, 'g'),
-    _SuggestionProduct('Ogórek', 1, 'szt.'),
-    _SuggestionProduct('Cebula', 3, 'szt.'),
-    _SuggestionProduct('Czosnek', 1, 'szt.'),
-    _SuggestionProduct('Kurczak', 500, 'g'),
-    _SuggestionProduct('Mięso mielone', 500, 'g'),
-    _SuggestionProduct('Woda', 1, 'but.'),
-  ];
 
   @override
   void initState() {
@@ -97,7 +77,8 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
   }
 
   Widget _buildQuickAdd(BuildContext context) {
-    final visibleSuggestions = _visibleSuggestions;
+    final appData = AppScope.of(context).data;
+    final visibleSuggestions = _visibleSuggestions(appData);
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -154,18 +135,29 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: visibleSuggestions
-                    .map(
-                      (suggestion) => ActionChip(
-                        avatar: const Icon(Icons.add, size: 16),
-                        label: Text(suggestion.name),
-                        onPressed: () => _addSuggestion(context, suggestion),
-                      ),
-                    )
-                    .toList(),
+              Text(
+                '${visibleSuggestions.length} podpowiedzi',
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 220),
+                child: SingleChildScrollView(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: visibleSuggestions
+                        .map(
+                          (suggestion) => ActionChip(
+                            avatar: const Icon(Icons.add, size: 16),
+                            label: Text(suggestion.name),
+                            onPressed: () =>
+                                _addSuggestion(context, suggestion),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
               ),
             ],
           ),
@@ -174,14 +166,55 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
     );
   }
 
-  List<_SuggestionProduct> get _visibleSuggestions {
+  List<ProductSuggestion> _visibleSuggestions(AppData data) {
     final query = _nameController.text.trim().toLowerCase();
-    final suggestions = query.isEmpty
-        ? _suggestions
-        : _suggestions
-              .where((item) => item.name.toLowerCase().contains(query))
-              .toList();
-    return suggestions.take(12).toList();
+    final suggestions = _allSuggestions(data);
+    if (query.isEmpty) {
+      return suggestions;
+    }
+    return suggestions
+        .where((item) => item.name.toLowerCase().contains(query))
+        .toList();
+  }
+
+  List<ProductSuggestion> _allSuggestions(AppData data) {
+    final byName = <String, ProductSuggestion>{};
+
+    void add(ProductSuggestion suggestion) {
+      final name = suggestion.name.trim();
+      if (name.isEmpty) {
+        return;
+      }
+      final key = name.toLowerCase();
+      byName.putIfAbsent(
+        key,
+        () => ProductSuggestion(
+          name,
+          suggestion.quantity <= 0 ? 1 : suggestion.quantity,
+          suggestion.unit.trim().isEmpty ? 'szt.' : suggestion.unit.trim(),
+        ),
+      );
+    }
+
+    for (final suggestion in productCatalog) {
+      add(suggestion);
+    }
+    for (final item in data.activeShoppingItems) {
+      add(ProductSuggestion(item.name, item.quantity, item.unit));
+    }
+    for (final ingredient in data.activeRecipeIngredients) {
+      add(
+        ProductSuggestion(
+          ingredient.name,
+          ingredient.quantity,
+          ingredient.unit,
+        ),
+      );
+    }
+
+    final result = byName.values.toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return result;
   }
 
   Future<void> _addFromFields(BuildContext context) async {
@@ -202,7 +235,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
 
   Future<void> _addSuggestion(
     BuildContext context,
-    _SuggestionProduct suggestion,
+    ProductSuggestion suggestion,
   ) async {
     await AppScope.of(context).addShoppingItem(
       name: suggestion.name,
@@ -377,14 +410,6 @@ class _EmptyShoppingList extends StatelessWidget {
       ),
     );
   }
-}
-
-class _SuggestionProduct {
-  const _SuggestionProduct(this.name, this.quantity, this.unit);
-
-  final String name;
-  final double quantity;
-  final String unit;
 }
 
 class _ProductDraft {
