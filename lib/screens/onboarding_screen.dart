@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app/app_scope.dart';
+import '../app/app_state.dart';
 
 enum OnboardingMode { create, join }
 
@@ -184,22 +185,33 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
     setState(() => _saving = true);
     final appState = AppScope.of(context);
-    if (_mode == OnboardingMode.create) {
-      await appState.createFamily(
-        familyName: _familyNameController.text,
-        memberName: _nameController.text,
-        email: _emailController.text,
-        phone: _phoneController.text,
-        avatar: _avatarController.text,
-      );
-    } else {
-      await appState.joinFamily(
-        code: _codeController.text,
-        memberName: _nameController.text,
-        email: _emailController.text,
-        phone: _phoneController.text,
-        avatar: _avatarController.text,
-      );
+    try {
+      if (_mode == OnboardingMode.create) {
+        await appState.createFamily(
+          familyName: _familyNameController.text,
+          memberName: _nameController.text,
+          email: _emailController.text,
+          phone: _phoneController.text,
+          avatar: _avatarController.text,
+        );
+      } else {
+        await appState.joinFamily(
+          code: _codeController.text,
+          memberName: _nameController.text,
+          email: _emailController.text,
+          phone: _phoneController.text,
+          avatar: _avatarController.text,
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        final message = error is AppActionException
+            ? error.message
+            : 'Nie udało się połączyć z serwerem.';
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+      }
     }
     if (mounted) {
       setState(() => _saving = false);

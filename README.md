@@ -45,6 +45,7 @@ web/                   Manifest i konfiguracja PWA
 - Ekran startowy: `Utwórz rodzinę` albo `Dołącz do rodziny`.
 - Kod rodziny do kopiowania i wysyłania innym osobom.
 - Wspólna lista zakupów dla osób z tym samym kodem rodziny.
+- Dołączanie po kodzie jest potwierdzane przez serwer: aplikacja najpierw pobiera prawdziwą rodzinę po kodzie, zapisuje członka pod jej `familyId`, a dopiero potem wpuszcza użytkownika do aplikacji.
 - Dodawanie, edycja, usuwanie, zaznaczanie i odznaczanie produktów.
 - Automatyczne łączenie tego samego produktu z tą samą jednostką.
 - Zakładka `Obiady` z przepisami, składnikami i porcjami bazowymi.
@@ -53,6 +54,7 @@ web/                   Manifest i konfiguracja PWA
 - Proporcjonalne przeliczanie składników według liczby porcji.
 - Scalanie powtarzających się składników przy dodawaniu do listy.
 - Status `oczekuje na synchronizację` przy elementach zapisanych lokalnie.
+- Stała synchronizacja w tle co kilka sekund, gdy aplikacja ma internet i skonfigurowany serwer.
 
 ## Uruchomienie serwera lokalnie
 

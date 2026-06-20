@@ -117,7 +117,7 @@ class _SyncBanner extends StatelessWidget {
           ? 'gotowe'
           : DateFormat('dd.MM, HH:mm').format(appState.lastSyncAt!);
       icon = Icons.cloud_done_outlined;
-      text = 'Zsynchronizowano: $lastSync';
+      text = 'Połączono z serwerem - ostatnia aktualizacja: $lastSync';
       color = scheme.primaryContainer;
     }
 

@@ -12,8 +12,19 @@ import '../models/entities.dart';
 import '../models/ingredient_draft.dart';
 import '../utils/ingredient_parser.dart';
 
+class AppActionException implements Exception {
+  const AppActionException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class AppState extends ChangeNotifier {
   AppState({required LocalStore store}) : _store = store;
+
+  static const _continuousSyncInterval = Duration(seconds: 8);
 
   final LocalStore _store;
   SyncService? _syncService;
@@ -62,7 +73,7 @@ class AppState extends ChangeNotifier {
         unawaited(syncNow());
       }
     });
-    _periodicSyncTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+    _periodicSyncTimer = Timer.periodic(_continuousSyncInterval, (_) {
       if (_online) {
         unawaited(syncNow());
       }
@@ -109,11 +120,31 @@ class AppState extends ChangeNotifier {
       isDeleted: false,
       syncStatus: SyncStatus.pending,
     );
-    _data = AppData.empty().copyWith(
+    final draftData = AppData.empty().copyWith(
       family: family,
       currentMember: member,
       members: [member],
     );
+    final syncService = _syncService;
+    if (syncService != null && _online) {
+      try {
+        final syncedData = await syncService.sync(draftData);
+        if (syncedData.family?.syncStatus != SyncStatus.synced ||
+            syncedData.currentMember?.syncStatus != SyncStatus.synced) {
+          throw const AppActionException(
+            'Serwer nie potwierdził utworzenia rodziny.',
+          );
+        }
+        await _replaceAfterRemoteSync(syncedData);
+        return;
+      } catch (error) {
+        throw AppActionException(
+          'Nie udało się utworzyć rodziny na serwerze: $error',
+        );
+      }
+    }
+
+    _data = draftData;
     await _persist(scheduleSync: true);
   }
 
@@ -124,25 +155,33 @@ class AppState extends ChangeNotifier {
     String? phone,
     String? avatar,
   }) async {
+    final syncService = _syncService;
+    if (syncService == null) {
+      throw const AppActionException(
+        'Najpierw wpisz adres serwera w ustawieniach.',
+      );
+    }
+    if (!_online) {
+      throw const AppActionException('Dołączenie do rodziny wymaga internetu.');
+    }
+
     final now = DateTime.now().toUtc();
     final normalizedCode = code.trim().toUpperCase();
     final memberId = _uuid.v4();
-    final temporaryFamilyId = _uuid.v4();
-    final family = Family(
-      id: temporaryFamilyId,
-      familyId: temporaryFamilyId,
-      name: 'Rodzina $normalizedCode',
-      code: normalizedCode,
-      createdAt: now,
-      updatedAt: now,
-      createdBy: memberId,
-      isDeleted: false,
-      syncStatus: SyncStatus.pending,
-      createOnSync: false,
-    );
+
+    Family? remoteFamily;
+    try {
+      remoteFamily = await syncService.findFamilyByCode(normalizedCode);
+    } catch (error) {
+      throw AppActionException('Nie udało się sprawdzić kodu rodziny: $error');
+    }
+    if (remoteFamily == null) {
+      throw const AppActionException('Nie znaleziono rodziny z takim kodem.');
+    }
+
     final member = Member(
       id: memberId,
-      familyId: temporaryFamilyId,
+      familyId: remoteFamily.id,
       name: memberName.trim(),
       email: nullableString(email),
       phone: nullableString(phone),
@@ -153,12 +192,23 @@ class AppState extends ChangeNotifier {
       isDeleted: false,
       syncStatus: SyncStatus.pending,
     );
-    _data = AppData.empty().copyWith(
-      family: family,
+    final draftData = AppData.empty().copyWith(
+      family: remoteFamily.copyWith(syncStatus: SyncStatus.synced),
       currentMember: member,
       members: [member],
     );
-    await _persist(scheduleSync: true);
+
+    try {
+      final syncedData = await syncService.sync(draftData);
+      if (syncedData.currentMember?.syncStatus != SyncStatus.synced) {
+        throw const AppActionException(
+          'Serwer znalazł rodzinę, ale nie zapisał członka.',
+        );
+      }
+      await _replaceAfterRemoteSync(syncedData);
+    } catch (error) {
+      throw AppActionException('Nie udało się dołączyć do rodziny: $error');
+    }
   }
 
   Future<void> addShoppingItem({
@@ -540,6 +590,15 @@ class AppState extends ChangeNotifier {
       _syncing = false;
       notifyListeners();
     }
+  }
+
+  Future<void> _replaceAfterRemoteSync(AppData data) async {
+    _data = data;
+    _lastSyncAt = DateTime.now();
+    _lastSyncError = null;
+    await _store.saveAll(_data);
+    await _store.saveLastSyncAt(_lastSyncAt!);
+    notifyListeners();
   }
 
   Future<void> updateServerUrl(String value) async {

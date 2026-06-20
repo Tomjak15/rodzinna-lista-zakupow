@@ -145,7 +145,7 @@ class SyncService {
 
     try {
       if (!family.createOnSync) {
-        final remote = await _findFamilyByCode(family.code);
+        final remote = await findFamilyByCode(family.code);
         if (remote == null) {
           return data.copyWith(
             family: family.copyWith(syncStatus: SyncStatus.failed),
@@ -165,7 +165,7 @@ class SyncService {
     }
   }
 
-  Future<Family?> _findFamilyByCode(String code) async {
+  Future<Family?> findFamilyByCode(String code) async {
     final response = await _client.get(
       Uri.parse('$_baseUrl/api/families/code/${Uri.encodeComponent(code)}'),
     );
