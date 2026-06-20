@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -30,7 +33,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
             scanning: _scanning,
             scannerSupported: receiptCameraScannerSupported,
             onScan: _scanReceipt,
-            onPaste: () => _openReceiptEditor(context),
+            onManualAdd: () => _openReceiptEditor(context),
           ),
           const SizedBox(height: 12),
           if (receipts.isEmpty)
@@ -52,8 +55,8 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
             )
           : FloatingActionButton.extended(
               onPressed: () => _openReceiptEditor(context),
-              icon: const Icon(Icons.receipt_long_outlined),
-              label: const Text('Wklej'),
+              icon: const Icon(Icons.add),
+              label: const Text('Dodaj'),
             ),
     );
   }
@@ -68,13 +71,14 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
       if (!mounted || result == null) {
         return;
       }
-      if (result.text.trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nie odczytano tekstu z paragonu.')),
-        );
-        return;
-      }
-      await _openReceiptEditor(context, initialRawText: result.text);
+      final parsed = parseReceiptText(result.text);
+      await _openReceiptEditor(
+        context,
+        initialItems: parsed.items,
+        initialTotal: parsed.total,
+        imageData: result.imageData,
+        imageMimeType: result.imageMimeType,
+      );
     } on ReceiptScanException catch (error) {
       if (!mounted) {
         return;
@@ -91,13 +95,21 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
 
   Future<void> _openReceiptEditor(
     BuildContext context, {
-    String initialRawText = '',
+    List<ReceiptItem> initialItems = const [],
+    double initialTotal = 0,
+    String? imageData,
+    String? imageMimeType,
   }) async {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (_) => _ReceiptEditorSheet(initialRawText: initialRawText),
+      builder: (_) => _ReceiptEditorSheet(
+        initialItems: initialItems,
+        initialTotal: initialTotal,
+        imageData: imageData,
+        imageMimeType: imageMimeType,
+      ),
     );
   }
 }
@@ -107,13 +119,13 @@ class _ReceiptActions extends StatelessWidget {
     required this.scanning,
     required this.scannerSupported,
     required this.onScan,
-    required this.onPaste,
+    required this.onManualAdd,
   });
 
   final bool scanning;
   final bool scannerSupported;
   final VoidCallback onScan;
-  final VoidCallback onPaste;
+  final VoidCallback onManualAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -132,9 +144,9 @@ class _ReceiptActions extends StatelessWidget {
           label: const Text('Skanuj paragon'),
         ),
         OutlinedButton.icon(
-          onPressed: onPaste,
-          icon: const Icon(Icons.edit_note_outlined),
-          label: const Text('Wklej tekst'),
+          onPressed: onManualAdd,
+          icon: const Icon(Icons.add),
+          label: const Text('Dodaj ręcznie'),
         ),
       ],
     );
@@ -152,32 +164,41 @@ class _ReceiptTile extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ExpansionTile(
-        leading: const Icon(Icons.receipt_long_outlined),
-        title: Text(receipt.storeName.isEmpty ? 'Paragon' : receipt.storeName),
+        leading: _ReceiptThumbnail(receipt: receipt),
+        title: Text(receipt.storeName.isEmpty ? 'Sklep' : receipt.storeName),
         subtitle: Text(
-          '${DateFormat('dd.MM.yyyy, HH:mm').format(receipt.purchasedAt.toLocal())} • '
-          '${receipt.items.length} produktów • ${_formatMoney(receipt.total)}',
+          '${_formatMoney(receipt.total)} • '
+          '${DateFormat('dd.MM.yyyy, HH:mm').format(receipt.purchasedAt.toLocal())}',
         ),
         children: [
+          if (receipt.imageData != null) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: _ReceiptPhotoPreview(imageData: receipt.imageData),
+            ),
+          ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Produkty',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+          ),
           if (receipt.items.isEmpty)
-            const ListTile(title: Text('Brak odczytanych produktów'))
+            const ListTile(title: Text('Brak zapisanych produktów'))
           else
-            ...receipt.items
-                .take(10)
-                .map(
-                  (item) => ListTile(
-                    dense: true,
-                    title: Text(item.name),
-                    subtitle: Text(
-                      '${formatQuantity(item.quantity)} ${item.unit} • '
-                      '${_formatMoney(item.price)}',
-                    ),
-                  ),
+            ...receipt.items.map(
+              (item) => ListTile(
+                dense: true,
+                title: Text(item.name),
+                subtitle: Text(
+                  '${formatQuantity(item.quantity)} ${item.unit} • '
+                  '${_formatMoney(item.price)}',
                 ),
-          if (receipt.items.length > 10)
-            ListTile(
-              dense: true,
-              title: Text('+${receipt.items.length - 10} więcej'),
+              ),
             ),
           OverflowBar(
             children: [
@@ -210,10 +231,48 @@ class _ReceiptTile extends StatelessWidget {
   }
 }
 
-class _ReceiptEditorSheet extends StatefulWidget {
-  const _ReceiptEditorSheet({required this.initialRawText});
+class _ReceiptThumbnail extends StatelessWidget {
+  const _ReceiptThumbnail({required this.receipt});
 
-  final String initialRawText;
+  final Receipt receipt;
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = _decodeReceiptImage(receipt.imageData);
+    final scheme = Theme.of(context).colorScheme;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: 52,
+        height: 52,
+        color: scheme.surfaceContainerHighest,
+        child: bytes == null
+            ? Icon(Icons.receipt_long_outlined, color: scheme.onSurfaceVariant)
+            : Image.memory(
+                bytes,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Icon(
+                  Icons.receipt_long_outlined,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+class _ReceiptEditorSheet extends StatefulWidget {
+  const _ReceiptEditorSheet({
+    required this.initialItems,
+    required this.initialTotal,
+    required this.imageData,
+    required this.imageMimeType,
+  });
+
+  final List<ReceiptItem> initialItems;
+  final double initialTotal;
+  final String? imageData;
+  final String? imageMimeType;
 
   @override
   State<_ReceiptEditorSheet> createState() => _ReceiptEditorSheetState();
@@ -222,22 +281,31 @@ class _ReceiptEditorSheet extends StatefulWidget {
 class _ReceiptEditorSheetState extends State<_ReceiptEditorSheet> {
   final _formKey = GlobalKey<FormState>();
   final _storeController = TextEditingController(text: 'Sklep');
-  late final TextEditingController _rawController;
-  late ParsedReceipt _parsed;
+  late final TextEditingController _totalController;
+  late final TextEditingController _productsController;
+  late ParsedReceipt _parsedProducts;
 
   @override
   void initState() {
     super.initState();
-    _rawController = TextEditingController(text: widget.initialRawText);
-    _parsed = parseReceiptText(widget.initialRawText);
-    _rawController.addListener(_refreshParsed);
+    _totalController = TextEditingController(
+      text: widget.initialTotal > 0
+          ? _formatPlainMoney(widget.initialTotal)
+          : '',
+    );
+    _productsController = TextEditingController(
+      text: widget.initialItems.map(_receiptItemToLine).join('\n'),
+    );
+    _parsedProducts = parseReceiptText(_productsController.text);
+    _productsController.addListener(_refreshProducts);
   }
 
   @override
   void dispose() {
-    _rawController.removeListener(_refreshParsed);
+    _productsController.removeListener(_refreshProducts);
     _storeController.dispose();
-    _rawController.dispose();
+    _totalController.dispose();
+    _productsController.dispose();
     super.dispose();
   }
 
@@ -268,7 +336,11 @@ class _ReceiptEditorSheetState extends State<_ReceiptEditorSheet> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              if (widget.imageData != null) ...[
+                const SizedBox(height: 8),
+                _ReceiptPhotoPreview(imageData: widget.imageData),
+              ],
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _storeController,
                 decoration: const InputDecoration(
@@ -278,20 +350,34 @@ class _ReceiptEditorSheetState extends State<_ReceiptEditorSheet> {
               ),
               const SizedBox(height: 12),
               TextFormField(
-                controller: _rawController,
-                minLines: 7,
-                maxLines: 12,
-                decoration: const InputDecoration(
-                  labelText: 'Tekst paragonu',
-                  alignLabelWithHint: true,
-                  prefixIcon: Icon(Icons.receipt_long_outlined),
+                controller: _totalController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
                 ),
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Brakuje tekstu paragonu'
-                    : null,
+                decoration: const InputDecoration(
+                  labelText: 'Kwota',
+                  prefixIcon: Icon(Icons.payments_outlined),
+                  suffixText: 'zł',
+                ),
+                validator: (value) {
+                  final amount = _parseMoney(value ?? '');
+                  return amount <= 0 ? 'Wpisz kwotę' : null;
+                },
               ),
               const SizedBox(height: 12),
-              _ParsedReceiptPreview(parsed: _parsed),
+              TextFormField(
+                controller: _productsController,
+                minLines: 3,
+                maxLines: 7,
+                decoration: const InputDecoration(
+                  labelText: 'Produkty',
+                  hintText: 'Chleb 1 szt. 4,99',
+                  alignLabelWithHint: true,
+                  prefixIcon: Icon(Icons.list_alt_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _ParsedReceiptPreview(parsed: _parsedProducts),
               const SizedBox(height: 12),
               Align(
                 alignment: Alignment.centerRight,
@@ -315,19 +401,54 @@ class _ReceiptEditorSheetState extends State<_ReceiptEditorSheet> {
     await AppScope.of(context).addReceipt(
       storeName: _storeController.text,
       purchasedAt: DateTime.now(),
-      total: _parsed.total,
-      rawText: _rawController.text,
-      items: _parsed.items,
+      total: _parseMoney(_totalController.text),
+      items: _parsedProducts.items,
+      rawText: '',
+      imageData: widget.imageData,
+      imageMimeType: widget.imageMimeType,
     );
     if (mounted) {
       Navigator.pop(context);
     }
   }
 
-  void _refreshParsed() {
+  void _refreshProducts() {
     setState(() {
-      _parsed = parseReceiptText(_rawController.text);
+      _parsedProducts = parseReceiptText(_productsController.text);
     });
+  }
+}
+
+class _ReceiptPhotoPreview extends StatelessWidget {
+  const _ReceiptPhotoPreview({required this.imageData});
+
+  final String? imageData;
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = _decodeReceiptImage(imageData);
+    final scheme = Theme.of(context).colorScheme;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: double.infinity,
+        constraints: const BoxConstraints(maxHeight: 260),
+        color: scheme.surfaceContainerHighest,
+        child: bytes == null
+            ? const SizedBox(
+                height: 160,
+                child: Center(child: Icon(Icons.receipt_long_outlined)),
+              )
+            : Image.memory(
+                bytes,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const SizedBox(
+                  height: 160,
+                  child: Center(child: Icon(Icons.broken_image_outlined)),
+                ),
+              ),
+      ),
+    );
   }
 }
 
@@ -350,7 +471,8 @@ class _ParsedReceiptPreview extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '${parsed.items.length} produktów • ${_formatMoney(parsed.total)}',
+            '${parsed.items.length} produktów • '
+            '${_formatMoney(parsed.total)}',
             style: Theme.of(context).textTheme.titleSmall,
           ),
           if (parsed.items.isNotEmpty) ...[
@@ -393,6 +515,36 @@ class _EmptyReceipts extends StatelessWidget {
   }
 }
 
+Uint8List? _decodeReceiptImage(String? imageData) {
+  final normalized = imageData?.trim();
+  if (normalized == null || normalized.isEmpty) {
+    return null;
+  }
+  try {
+    return base64Decode(normalized);
+  } on FormatException {
+    return null;
+  }
+}
+
+String _receiptItemToLine(ReceiptItem item) {
+  return '${item.name} ${formatQuantity(item.quantity)} ${item.unit} '
+      '${_formatPlainMoney(item.price)}';
+}
+
 String _formatMoney(double value) {
   return NumberFormat.currency(locale: 'pl_PL', symbol: 'zł').format(value);
+}
+
+String _formatPlainMoney(double value) {
+  return value.toStringAsFixed(2).replaceAll('.', ',');
+}
+
+double _parseMoney(String value) {
+  final normalized = value
+      .toLowerCase()
+      .replaceAll('zł', '')
+      .replaceAll(RegExp(r'\s+'), '')
+      .replaceAll(',', '.');
+  return double.tryParse(normalized) ?? 0;
 }

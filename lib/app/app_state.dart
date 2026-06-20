@@ -458,8 +458,10 @@ class AppState extends ChangeNotifier {
     required String storeName,
     required DateTime purchasedAt,
     required double total,
-    required String rawText,
     required List<ReceiptItem> items,
+    String rawText = '',
+    String? imageData,
+    String? imageMimeType,
   }) async {
     final family = _data.family;
     final member = _data.currentMember;
@@ -474,6 +476,8 @@ class AppState extends ChangeNotifier {
       purchasedAt: purchasedAt.toUtc(),
       total: total,
       rawText: rawText.trim(),
+      imageData: nullableString(imageData),
+      imageMimeType: nullableString(imageMimeType),
       items: items,
       createdAt: now,
       updatedAt: now,

@@ -1309,6 +1309,8 @@ class Receipt {
     required this.purchasedAt,
     required this.total,
     required this.rawText,
+    required this.imageData,
+    required this.imageMimeType,
     required this.items,
     required this.createdAt,
     required this.updatedAt,
@@ -1327,6 +1329,10 @@ class Receipt {
       total: doubleFromJson(json['total']),
       rawText:
           json['rawText']?.toString() ?? json['raw_text']?.toString() ?? '',
+      imageData: nullableString(json['imageData'] ?? json['image_data']),
+      imageMimeType: nullableString(
+        json['imageMimeType'] ?? json['image_mime_type'],
+      ),
       items: receiptItemsFromJson(
         json['items'] ?? json['itemsJson'] ?? json['items_json'],
       ),
@@ -1347,6 +1353,8 @@ class Receipt {
       purchasedAt: dateFromJson(json['purchased_at']),
       total: doubleFromJson(json['total']),
       rawText: json['raw_text']?.toString() ?? '',
+      imageData: nullableString(json['image_data']),
+      imageMimeType: nullableString(json['image_mime_type']),
       items: receiptItemsFromJson(json['items_json']),
       createdAt: dateFromJson(json['created_at']),
       updatedAt: dateFromJson(json['updated_at']),
@@ -1362,6 +1370,8 @@ class Receipt {
   final DateTime purchasedAt;
   final double total;
   final String rawText;
+  final String? imageData;
+  final String? imageMimeType;
   final List<ReceiptItem> items;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -1377,6 +1387,8 @@ class Receipt {
       'purchasedAt': purchasedAt.toIso8601String(),
       'total': total,
       'rawText': rawText,
+      'imageData': imageData,
+      'imageMimeType': imageMimeType,
       'items': items.map((item) => item.toJson()).toList(),
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
@@ -1394,6 +1406,8 @@ class Receipt {
       'purchased_at': purchasedAt.toIso8601String(),
       'total': total,
       'raw_text': rawText,
+      'image_data': imageData,
+      'image_mime_type': imageMimeType,
       'items_json': jsonEncode(items.map((item) => item.toJson()).toList()),
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -1409,6 +1423,8 @@ class Receipt {
     DateTime? purchasedAt,
     double? total,
     String? rawText,
+    String? imageData,
+    String? imageMimeType,
     List<ReceiptItem>? items,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -1423,6 +1439,8 @@ class Receipt {
       purchasedAt: purchasedAt ?? this.purchasedAt,
       total: total ?? this.total,
       rawText: rawText ?? this.rawText,
+      imageData: imageData ?? this.imageData,
+      imageMimeType: imageMimeType ?? this.imageMimeType,
       items: items ?? this.items,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

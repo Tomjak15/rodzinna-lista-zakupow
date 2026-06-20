@@ -1,8 +1,13 @@
 class ReceiptScanResult {
-  const ReceiptScanResult({required this.text, this.imagePath});
+  const ReceiptScanResult({
+    required this.text,
+    required this.imageData,
+    required this.imageMimeType,
+  });
 
   final String text;
-  final String? imagePath;
+  final String imageData;
+  final String imageMimeType;
 }
 
 class ReceiptScanException implements Exception {
@@ -18,6 +23,6 @@ bool get receiptCameraScannerSupported => false;
 
 Future<ReceiptScanResult?> scanReceiptFromCamera() async {
   throw const ReceiptScanException(
-    'Skaner aparatem działa w aplikacji Android/iOS. W PWA wklej tekst paragonu.',
+    'Skaner aparatem działa w aplikacji Android/iOS. W PWA dodaj paragon ręcznie.',
   );
 }

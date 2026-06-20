@@ -60,8 +60,10 @@ ParsedReceipt parseReceiptText(String rawText) {
 bool _isTotalLine(String line) {
   return line.contains('suma') ||
       line.contains('razem') ||
-      line.contains('do zaplaty') ||
-      line.contains('do zapłaty');
+      line.contains('łącznie') ||
+      line.contains('lacznie') ||
+      line.contains('do zapłaty') ||
+      line.contains('do zaplaty');
 }
 
 bool _shouldSkipLine(String line) {
@@ -69,18 +71,18 @@ bool _shouldSkipLine(String line) {
     'paragon',
     'fiskalny',
     'nip',
-    'sprzedaz',
     'sprzedaż',
+    'sprzedaz',
     'podatek',
     'vat',
     'kasa',
     'kasjer',
     'terminal',
-    'platnosc',
     'płatność',
+    'platnosc',
     'karta',
-    'gotowka',
     'gotówka',
+    'gotowka',
     'reszta',
     'data',
     'godz',
@@ -91,7 +93,10 @@ bool _shouldSkipLine(String line) {
 }
 
 _Price? _lastPrice(String line) {
-  final matches = RegExp(r'(\d+[,.]\d{2})(?:\s*[A-Z])?\s*$').allMatches(line);
+  final matches = RegExp(
+    r'(\d+[,.]\d{2})(?:\s*(?:zł|zl|pln|[A-Z]))?\s*$',
+    caseSensitive: false,
+  ).allMatches(line);
   final match = matches.isEmpty ? null : matches.last;
   if (match == null) {
     return null;

@@ -42,13 +42,20 @@ void main() {
       storeName: 'Sklep',
       purchasedAt: DateTime(2026, 6, 20, 12),
       total: 9.99,
-      rawText: 'CHLEB 4,99',
+      imageData: 'abc123',
+      imageMimeType: 'image/jpeg',
       items: const [
         ReceiptItem(name: 'Chleb', quantity: 1, unit: 'szt.', price: 4.99),
       ],
     );
 
     expect(appState.data.activeReceipts, hasLength(1));
+    expect(appState.data.activeReceipts.single.rawText, isEmpty);
+    expect(appState.data.activeReceipts.single.imageData, 'abc123');
+    expect(
+      appState.data.activeReceipts.single.toRemote()['image_mime_type'],
+      'image/jpeg',
+    );
 
     await appState.addReceiptItemsToShoppingList(
       appState.data.activeReceipts.single,

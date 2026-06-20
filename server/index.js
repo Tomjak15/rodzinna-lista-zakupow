@@ -168,6 +168,8 @@ const tables = {
       "purchased_at",
       "total",
       "raw_text",
+      "image_data",
+      "image_mime_type",
       "items_json",
       "created_at",
       "updated_at",
@@ -182,7 +184,7 @@ const tables = {
 initializeDatabase();
 
 app.use(cors());
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "12mb" }));
 app.use(morgan("tiny"));
 
 app.get("/", (_req, res) => {
@@ -376,6 +378,8 @@ function initializeDatabase() {
       purchased_at text not null,
       total real not null default 0,
       raw_text text not null default '',
+      image_data text,
+      image_mime_type text,
       items_json text not null default '[]',
       created_at text not null,
       updated_at text not null,
@@ -400,6 +404,17 @@ function initializeDatabase() {
     create index if not exists receipts_family_id_idx on receipts (family_id);
     create index if not exists receipts_purchased_at_idx on receipts (purchased_at);
   `);
+
+  ensureColumn("receipts", "image_data", "text");
+  ensureColumn("receipts", "image_mime_type", "text");
+}
+
+function ensureColumn(table, column, definition) {
+  const columns = db.prepare(`pragma table_info(${table})`).all();
+  if (columns.some((item) => item.name === column)) {
+    return;
+  }
+  db.prepare(`alter table ${table} add column ${column} ${definition}`).run();
 }
 
 function requireTable(table) {
