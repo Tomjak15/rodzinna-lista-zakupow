@@ -80,24 +80,46 @@ Baza SQLite tworzy się automatycznie w `server/data/rodzinna_lista.sqlite`.
 
 ## Replit
 
-1. Utwórz nowy Repl jako `Node.js`.
-2. Wgraj zawartość katalogu `server`.
-3. Uruchom:
+Repozytorium ma root `.replit`, więc można importować cały projekt z GitHuba. Replit uruchomi tylko backend z katalogu `server`.
 
-```bash
-npm install
-npm start
+Szybki import publicznego repo:
+
+```text
+https://replit.com/github.com/Tomjak15/rodzinna-lista-zakupow
 ```
 
-4. Skopiuj publiczny adres Replit, np.:
+Import ręczny:
+
+1. Otwórz `https://replit.com/import`.
+2. Wybierz `GitHub`.
+3. Wklej albo wybierz repo:
+
+```text
+https://github.com/Tomjak15/rodzinna-lista-zakupow
+```
+
+4. Kliknij `Import`.
+5. Po imporcie kliknij `Run`.
+
+Replit wykona:
+
+```bash
+cd server && npm install && npm start
+```
+
+Serwer powinien pokazać endpoint API. Sprawdź:
+
+```text
+https://twoj-replit-url/api/health
+```
+
+Wklej adres bez `/api/health` w aplikacji: `Ustawienia > Adres serwera`, np.:
 
 ```text
 https://rodzinna-lista-zakupow.twoj-login.replit.app
 ```
 
-5. Wklej ten adres w aplikacji: `Ustawienia > Adres serwera`.
-
-Możesz też wbudować adres w APK/PWA przez `--dart-define=SERVER_URL=...`, ale nie jest to konieczne.
+Możesz też wbudować adres w APK/PWA przez `--dart-define=SERVER_URL=...`, ale nie jest to konieczne, bo adres można zmienić w ustawieniach aplikacji.
 
 ## Render
 

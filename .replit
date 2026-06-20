@@ -1,0 +1,15 @@
+entrypoint = "server/index.js"
+modules = ["nodejs-20"]
+run = "cd server && npm install && npm start"
+
+[gitHubImport]
+requiredFiles = [".replit", "replit.nix", "server/package.json"]
+
+[deployment]
+build = "cd server && npm ci"
+run = "cd server && npm start"
+deploymentTarget = "cloudrun"
+
+[[ports]]
+localPort = 3000
+externalPort = 80
