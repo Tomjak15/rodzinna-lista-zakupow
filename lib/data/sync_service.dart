@@ -85,6 +85,24 @@ class SyncService {
       withStatus: (item, status) => item.copyWith(syncStatus: status),
       familyIdOf: (item) => item.familyId,
     );
+    final favoriteProducts = await _pushList<FavoriteProduct>(
+      table: 'favorite_products',
+      familyId: familyId,
+      local: next.favoriteProducts,
+      toRemote: (item) => item.toRemote(),
+      statusOf: (item) => item.syncStatus,
+      withStatus: (item, status) => item.copyWith(syncStatus: status),
+      familyIdOf: (item) => item.familyId,
+    );
+    final receipts = await _pushList<Receipt>(
+      table: 'receipts',
+      familyId: familyId,
+      local: next.receipts,
+      toRemote: (item) => item.toRemote(),
+      statusOf: (item) => item.syncStatus,
+      withStatus: (item, status) => item.copyWith(syncStatus: status),
+      familyIdOf: (item) => item.familyId,
+    );
 
     next = next.copyWith(
       members: members,
@@ -94,6 +112,8 @@ class SyncService {
       recipeIngredients: recipeIngredients,
       mealPlans: mealPlans,
       calendarEvents: calendarEvents,
+      favoriteProducts: favoriteProducts,
+      receipts: receipts,
     );
 
     final pulledMembers = await _pullList<Member>(
@@ -161,6 +181,26 @@ class SyncService {
       statusOf: (item) => item.syncStatus,
       optional: true,
     );
+    final pulledFavoriteProducts = await _pullList<FavoriteProduct>(
+      table: 'favorite_products',
+      familyId: familyId,
+      local: next.favoriteProducts,
+      fromRemote: FavoriteProduct.fromRemote,
+      idOf: (item) => item.id,
+      updatedAtOf: (item) => item.updatedAt,
+      statusOf: (item) => item.syncStatus,
+      optional: true,
+    );
+    final pulledReceipts = await _pullList<Receipt>(
+      table: 'receipts',
+      familyId: familyId,
+      local: next.receipts,
+      fromRemote: Receipt.fromRemote,
+      idOf: (item) => item.id,
+      updatedAtOf: (item) => item.updatedAt,
+      statusOf: (item) => item.syncStatus,
+      optional: true,
+    );
 
     final currentMember = _refreshCurrentMember(
       next.currentMember,
@@ -176,6 +216,8 @@ class SyncService {
       recipeIngredients: pulledRecipeIngredients,
       mealPlans: pulledMealPlans,
       calendarEvents: pulledCalendarEvents,
+      favoriteProducts: pulledFavoriteProducts,
+      receipts: pulledReceipts,
     );
   }
 
@@ -280,6 +322,22 @@ class SyncService {
           )
           .toList(),
       calendarEvents: data.calendarEvents
+          .map(
+            (item) => item.copyWith(
+              familyId: familyId,
+              syncStatus: SyncStatus.pending,
+            ),
+          )
+          .toList(),
+      favoriteProducts: data.favoriteProducts
+          .map(
+            (item) => item.copyWith(
+              familyId: familyId,
+              syncStatus: SyncStatus.pending,
+            ),
+          )
+          .toList(),
+      receipts: data.receipts
           .map(
             (item) => item.copyWith(
               familyId: familyId,

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 enum SyncStatus { synced, pending, failed }
 
 SyncStatus syncStatusFromJson(Object? value) {
@@ -100,6 +102,8 @@ class AppData {
     required this.recipeIngredients,
     required this.mealPlans,
     required this.calendarEvents,
+    required this.favoriteProducts,
+    required this.receipts,
   });
 
   factory AppData.empty() {
@@ -113,6 +117,8 @@ class AppData {
       recipeIngredients: [],
       mealPlans: [],
       calendarEvents: [],
+      favoriteProducts: [],
+      receipts: [],
     );
   }
 
@@ -125,6 +131,8 @@ class AppData {
   final List<RecipeIngredient> recipeIngredients;
   final List<MealPlan> mealPlans;
   final List<CalendarEvent> calendarEvents;
+  final List<FavoriteProduct> favoriteProducts;
+  final List<Receipt> receipts;
 
   List<Member> get activeMembers =>
       members.where((member) => !member.isDeleted).toList();
@@ -145,6 +153,12 @@ class AppData {
 
   List<CalendarEvent> get activeCalendarEvents =>
       calendarEvents.where((event) => !event.isDeleted).toList();
+
+  List<FavoriteProduct> get activeFavoriteProducts =>
+      favoriteProducts.where((product) => !product.isDeleted).toList();
+
+  List<Receipt> get activeReceipts =>
+      receipts.where((receipt) => !receipt.isDeleted).toList();
 
   int get pendingCount {
     var count = 0;
@@ -170,6 +184,12 @@ class AppData {
     count += calendarEvents
         .where((item) => item.syncStatus != SyncStatus.synced)
         .length;
+    count += favoriteProducts
+        .where((item) => item.syncStatus != SyncStatus.synced)
+        .length;
+    count += receipts
+        .where((item) => item.syncStatus != SyncStatus.synced)
+        .length;
     return count;
   }
 
@@ -183,6 +203,8 @@ class AppData {
     List<RecipeIngredient>? recipeIngredients,
     List<MealPlan>? mealPlans,
     List<CalendarEvent>? calendarEvents,
+    List<FavoriteProduct>? favoriteProducts,
+    List<Receipt>? receipts,
     bool clearFamily = false,
     bool clearMember = false,
   }) {
@@ -196,6 +218,8 @@ class AppData {
       recipeIngredients: recipeIngredients ?? this.recipeIngredients,
       mealPlans: mealPlans ?? this.mealPlans,
       calendarEvents: calendarEvents ?? this.calendarEvents,
+      favoriteProducts: favoriteProducts ?? this.favoriteProducts,
+      receipts: receipts ?? this.receipts,
     );
   }
 }
@@ -1162,5 +1186,294 @@ class CalendarEvent {
       isDeleted: isDeleted ?? this.isDeleted,
       syncStatus: syncStatus ?? this.syncStatus,
     );
+  }
+}
+
+class FavoriteProduct {
+  const FavoriteProduct({
+    required this.id,
+    required this.familyId,
+    required this.name,
+    required this.quantity,
+    required this.unit,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.createdBy,
+    required this.isDeleted,
+    required this.syncStatus,
+  });
+
+  factory FavoriteProduct.fromJson(Map<String, dynamic> json) {
+    return FavoriteProduct(
+      id: (json['id'] ?? '').toString(),
+      familyId: (json['familyId'] ?? json['family_id'] ?? '').toString(),
+      name: json['name']?.toString() ?? '',
+      quantity: doubleFromJson(json['quantity']),
+      unit: json['unit']?.toString() ?? 'szt.',
+      createdAt: dateFromJson(json['createdAt'] ?? json['created_at']),
+      updatedAt: dateFromJson(json['updatedAt'] ?? json['updated_at']),
+      createdBy:
+          json['createdBy']?.toString() ?? json['created_by']?.toString() ?? '',
+      isDeleted: boolFromJson(json['isDeleted'] ?? json['is_deleted']),
+      syncStatus: syncStatusFromJson(json['syncStatus']),
+    );
+  }
+
+  factory FavoriteProduct.fromRemote(Map<String, dynamic> json) {
+    return FavoriteProduct(
+      id: json['id'].toString(),
+      familyId: json['family_id'].toString(),
+      name: json['name']?.toString() ?? '',
+      quantity: doubleFromJson(json['quantity']),
+      unit: json['unit']?.toString() ?? 'szt.',
+      createdAt: dateFromJson(json['created_at']),
+      updatedAt: dateFromJson(json['updated_at']),
+      createdBy: json['created_by']?.toString() ?? '',
+      isDeleted: boolFromJson(json['is_deleted'] ?? json['deleted']),
+      syncStatus: SyncStatus.synced,
+    );
+  }
+
+  final String id;
+  final String familyId;
+  final String name;
+  final double quantity;
+  final String unit;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String createdBy;
+  final bool isDeleted;
+  final SyncStatus syncStatus;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'familyId': familyId,
+      'name': name,
+      'quantity': quantity,
+      'unit': unit,
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+      'createdBy': createdBy,
+      'isDeleted': isDeleted,
+      'syncStatus': syncStatus.name,
+    };
+  }
+
+  Map<String, dynamic> toRemote() {
+    return {
+      'id': id,
+      'family_id': familyId,
+      'name': name,
+      'quantity': quantity,
+      'unit': unit,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+      'created_by': createdBy,
+      'is_deleted': isDeleted,
+    };
+  }
+
+  FavoriteProduct copyWith({
+    String? id,
+    String? familyId,
+    String? name,
+    double? quantity,
+    String? unit,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? createdBy,
+    bool? isDeleted,
+    SyncStatus? syncStatus,
+  }) {
+    return FavoriteProduct(
+      id: id ?? this.id,
+      familyId: familyId ?? this.familyId,
+      name: name ?? this.name,
+      quantity: quantity ?? this.quantity,
+      unit: unit ?? this.unit,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      createdBy: createdBy ?? this.createdBy,
+      isDeleted: isDeleted ?? this.isDeleted,
+      syncStatus: syncStatus ?? this.syncStatus,
+    );
+  }
+}
+
+class Receipt {
+  const Receipt({
+    required this.id,
+    required this.familyId,
+    required this.storeName,
+    required this.purchasedAt,
+    required this.total,
+    required this.rawText,
+    required this.items,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.createdBy,
+    required this.isDeleted,
+    required this.syncStatus,
+  });
+
+  factory Receipt.fromJson(Map<String, dynamic> json) {
+    return Receipt(
+      id: json['id'].toString(),
+      familyId: (json['familyId'] ?? json['family_id']).toString(),
+      storeName:
+          json['storeName']?.toString() ?? json['store_name']?.toString() ?? '',
+      purchasedAt: dateFromJson(json['purchasedAt'] ?? json['purchased_at']),
+      total: doubleFromJson(json['total']),
+      rawText:
+          json['rawText']?.toString() ?? json['raw_text']?.toString() ?? '',
+      items: receiptItemsFromJson(
+        json['items'] ?? json['itemsJson'] ?? json['items_json'],
+      ),
+      createdAt: dateFromJson(json['createdAt'] ?? json['created_at']),
+      updatedAt: dateFromJson(json['updatedAt'] ?? json['updated_at']),
+      createdBy:
+          json['createdBy']?.toString() ?? json['created_by']?.toString() ?? '',
+      isDeleted: boolFromJson(json['isDeleted'] ?? json['is_deleted']),
+      syncStatus: syncStatusFromJson(json['syncStatus']),
+    );
+  }
+
+  factory Receipt.fromRemote(Map<String, dynamic> json) {
+    return Receipt(
+      id: json['id'].toString(),
+      familyId: json['family_id'].toString(),
+      storeName: json['store_name']?.toString() ?? '',
+      purchasedAt: dateFromJson(json['purchased_at']),
+      total: doubleFromJson(json['total']),
+      rawText: json['raw_text']?.toString() ?? '',
+      items: receiptItemsFromJson(json['items_json']),
+      createdAt: dateFromJson(json['created_at']),
+      updatedAt: dateFromJson(json['updated_at']),
+      createdBy: json['created_by']?.toString() ?? '',
+      isDeleted: boolFromJson(json['is_deleted'] ?? json['deleted']),
+      syncStatus: SyncStatus.synced,
+    );
+  }
+
+  final String id;
+  final String familyId;
+  final String storeName;
+  final DateTime purchasedAt;
+  final double total;
+  final String rawText;
+  final List<ReceiptItem> items;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String createdBy;
+  final bool isDeleted;
+  final SyncStatus syncStatus;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'familyId': familyId,
+      'storeName': storeName,
+      'purchasedAt': purchasedAt.toIso8601String(),
+      'total': total,
+      'rawText': rawText,
+      'items': items.map((item) => item.toJson()).toList(),
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+      'createdBy': createdBy,
+      'isDeleted': isDeleted,
+      'syncStatus': syncStatus.name,
+    };
+  }
+
+  Map<String, dynamic> toRemote() {
+    return {
+      'id': id,
+      'family_id': familyId,
+      'store_name': storeName,
+      'purchased_at': purchasedAt.toIso8601String(),
+      'total': total,
+      'raw_text': rawText,
+      'items_json': jsonEncode(items.map((item) => item.toJson()).toList()),
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+      'created_by': createdBy,
+      'is_deleted': isDeleted,
+    };
+  }
+
+  Receipt copyWith({
+    String? id,
+    String? familyId,
+    String? storeName,
+    DateTime? purchasedAt,
+    double? total,
+    String? rawText,
+    List<ReceiptItem>? items,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? createdBy,
+    bool? isDeleted,
+    SyncStatus? syncStatus,
+  }) {
+    return Receipt(
+      id: id ?? this.id,
+      familyId: familyId ?? this.familyId,
+      storeName: storeName ?? this.storeName,
+      purchasedAt: purchasedAt ?? this.purchasedAt,
+      total: total ?? this.total,
+      rawText: rawText ?? this.rawText,
+      items: items ?? this.items,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      createdBy: createdBy ?? this.createdBy,
+      isDeleted: isDeleted ?? this.isDeleted,
+      syncStatus: syncStatus ?? this.syncStatus,
+    );
+  }
+}
+
+List<ReceiptItem> receiptItemsFromJson(Object? value) {
+  Object? decoded = value;
+  if (decoded is String && decoded.trim().isNotEmpty) {
+    try {
+      decoded = jsonDecode(decoded);
+    } catch (_) {
+      decoded = const [];
+    }
+  }
+  if (decoded is! List) {
+    return const [];
+  }
+  return decoded
+      .whereType<Map>()
+      .map((item) => ReceiptItem.fromJson(Map<String, dynamic>.from(item)))
+      .toList();
+}
+
+class ReceiptItem {
+  const ReceiptItem({
+    required this.name,
+    required this.quantity,
+    required this.unit,
+    required this.price,
+  });
+
+  factory ReceiptItem.fromJson(Map<String, dynamic> json) {
+    return ReceiptItem(
+      name: json['name']?.toString() ?? '',
+      quantity: doubleFromJson(json['quantity']),
+      unit: json['unit']?.toString() ?? 'szt.',
+      price: doubleFromJson(json['price']),
+    );
+  }
+
+  final String name;
+  final double quantity;
+  final String unit;
+  final double price;
+
+  Map<String, dynamic> toJson() {
+    return {'name': name, 'quantity': quantity, 'unit': unit, 'price': price};
   }
 }

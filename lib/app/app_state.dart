@@ -379,6 +379,150 @@ class AppState extends ChangeNotifier {
     await _persist(scheduleSync: true);
   }
 
+  bool isFavoriteProduct(String name, String unit) {
+    final cleanName = normalizeName(name);
+    final cleanUnit = normalizeName(normalizeIngredientUnit(unit));
+    return _data.activeFavoriteProducts.any(
+      (product) =>
+          normalizeName(product.name) == cleanName &&
+          normalizeName(product.unit) == cleanUnit,
+    );
+  }
+
+  Future<void> toggleFavoriteProduct({
+    required String name,
+    required double quantity,
+    required String unit,
+  }) async {
+    final family = _data.family;
+    final member = _data.currentMember;
+    final cleanName = name.trim();
+    if (family == null || member == null || cleanName.isEmpty) {
+      return;
+    }
+
+    final now = DateTime.now().toUtc();
+    final cleanUnit = normalizeIngredientUnit(unit);
+    final index = _data.favoriteProducts.indexWhere(
+      (product) =>
+          normalizeName(product.name) == normalizeName(cleanName) &&
+          normalizeName(product.unit) == normalizeName(cleanUnit),
+    );
+
+    if (index == -1) {
+      _data = _data.copyWith(
+        favoriteProducts: [
+          ..._data.favoriteProducts,
+          FavoriteProduct(
+            id: _uuid.v4(),
+            familyId: family.id,
+            name: cleanName,
+            quantity: quantity <= 0 ? 1 : quantity,
+            unit: cleanUnit,
+            createdAt: now,
+            updatedAt: now,
+            createdBy: member.id,
+            isDeleted: false,
+            syncStatus: SyncStatus.pending,
+          ),
+        ],
+      );
+      await _persist(scheduleSync: true);
+      return;
+    }
+
+    final updated = [..._data.favoriteProducts];
+    final product = updated[index];
+    updated[index] = product.copyWith(
+      familyId: family.id,
+      quantity: quantity <= 0 ? product.quantity : quantity,
+      unit: cleanUnit,
+      updatedAt: now,
+      createdBy: product.createdBy.isEmpty ? member.id : product.createdBy,
+      isDeleted: !product.isDeleted,
+      syncStatus: SyncStatus.pending,
+    );
+    _data = _data.copyWith(favoriteProducts: updated);
+    await _persist(scheduleSync: true);
+  }
+
+  Future<void> addFavoriteProductToShoppingList(FavoriteProduct product) async {
+    await addShoppingItem(
+      name: product.name,
+      quantity: product.quantity,
+      unit: product.unit,
+    );
+  }
+
+  Future<void> addReceipt({
+    required String storeName,
+    required DateTime purchasedAt,
+    required double total,
+    required String rawText,
+    required List<ReceiptItem> items,
+  }) async {
+    final family = _data.family;
+    final member = _data.currentMember;
+    if (family == null || member == null) {
+      return;
+    }
+    final now = DateTime.now().toUtc();
+    final receipt = Receipt(
+      id: _uuid.v4(),
+      familyId: family.id,
+      storeName: storeName.trim().isEmpty ? 'Sklep' : storeName.trim(),
+      purchasedAt: purchasedAt.toUtc(),
+      total: total,
+      rawText: rawText.trim(),
+      items: items,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: member.id,
+      isDeleted: false,
+      syncStatus: SyncStatus.pending,
+    );
+    _data = _data.copyWith(receipts: [..._data.receipts, receipt]);
+    await _persist(scheduleSync: true);
+  }
+
+  Future<void> deleteReceipt(Receipt receipt) async {
+    final now = DateTime.now().toUtc();
+    _data = _data.copyWith(
+      receipts: _data.receipts
+          .map(
+            (entry) => entry.id == receipt.id
+                ? entry.copyWith(
+                    isDeleted: true,
+                    updatedAt: now,
+                    syncStatus: SyncStatus.pending,
+                  )
+                : entry,
+          )
+          .toList(),
+    );
+    await _persist(scheduleSync: true);
+  }
+
+  Future<void> addReceiptItemsToShoppingList(Receipt receipt) async {
+    final now = DateTime.now().toUtc();
+    var addedAny = false;
+    for (final item in receipt.items) {
+      if (item.name.trim().isEmpty || item.quantity <= 0) {
+        continue;
+      }
+      _mergeShoppingItem(
+        name: item.name,
+        quantity: item.quantity,
+        unit: item.unit,
+        now: now,
+      );
+      addedAny = true;
+    }
+    if (addedAny) {
+      await _persist(scheduleSync: true);
+    }
+  }
+
   Future<void> addMealWithRecipe({
     required String mealName,
     required String instructions,

@@ -16,6 +16,8 @@ class LocalStore {
   static const _recipeIngredientsKey = 'recipeIngredients';
   static const _mealPlansKey = 'mealPlans';
   static const _calendarEventsKey = 'calendarEvents';
+  static const _favoriteProductsKey = 'favoriteProducts';
+  static const _receiptsKey = 'receipts';
   static const _lastSyncKey = 'lastSyncAt';
   static const _serverUrlKey = 'serverUrl';
 
@@ -40,6 +42,11 @@ class LocalStore {
       ),
       mealPlans: _readList(_mealPlansKey, MealPlan.fromJson),
       calendarEvents: _readList(_calendarEventsKey, CalendarEvent.fromJson),
+      favoriteProducts: _readList(
+        _favoriteProductsKey,
+        FavoriteProduct.fromJson,
+      ),
+      receipts: _readList(_receiptsKey, Receipt.fromJson),
     );
   }
 
@@ -63,6 +70,11 @@ class LocalStore {
         _calendarEventsKey,
         data.calendarEvents.map((item) => item.toJson()),
       ),
+      _writeList(
+        _favoriteProductsKey,
+        data.favoriteProducts.map((item) => item.toJson()),
+      ),
+      _writeList(_receiptsKey, data.receipts.map((item) => item.toJson())),
     ]);
   }
 
@@ -101,6 +113,8 @@ class LocalStore {
       _prefs.remove(_recipeIngredientsKey),
       _prefs.remove(_mealPlansKey),
       _prefs.remove(_calendarEventsKey),
+      _prefs.remove(_favoriteProductsKey),
+      _prefs.remove(_receiptsKey),
       _prefs.remove(_lastSyncKey),
       _prefs.remove(_serverUrlKey),
     ]);

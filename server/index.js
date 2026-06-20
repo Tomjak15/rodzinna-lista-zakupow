@@ -145,6 +145,38 @@ const tables = {
     boolColumns: ["is_family_wide", "is_deleted"],
     numberColumns: [],
   },
+  favorite_products: {
+    columns: [
+      "id",
+      "family_id",
+      "name",
+      "quantity",
+      "unit",
+      "created_at",
+      "updated_at",
+      "created_by",
+      "is_deleted",
+    ],
+    boolColumns: ["is_deleted"],
+    numberColumns: ["quantity"],
+  },
+  receipts: {
+    columns: [
+      "id",
+      "family_id",
+      "store_name",
+      "purchased_at",
+      "total",
+      "raw_text",
+      "items_json",
+      "created_at",
+      "updated_at",
+      "created_by",
+      "is_deleted",
+    ],
+    boolColumns: ["is_deleted"],
+    numberColumns: ["total"],
+  },
 };
 
 initializeDatabase();
@@ -325,6 +357,32 @@ function initializeDatabase() {
       is_deleted integer not null default 0
     );
 
+    create table if not exists favorite_products (
+      id text primary key,
+      family_id text not null references families(id) on delete cascade,
+      name text not null,
+      quantity real not null default 1,
+      unit text not null default 'szt.',
+      created_at text not null,
+      updated_at text not null,
+      created_by text not null,
+      is_deleted integer not null default 0
+    );
+
+    create table if not exists receipts (
+      id text primary key,
+      family_id text not null references families(id) on delete cascade,
+      store_name text not null default 'Sklep',
+      purchased_at text not null,
+      total real not null default 0,
+      raw_text text not null default '',
+      items_json text not null default '[]',
+      created_at text not null,
+      updated_at text not null,
+      created_by text not null,
+      is_deleted integer not null default 0
+    );
+
     create index if not exists families_code_idx on families (code);
     create index if not exists members_family_id_idx on members (family_id);
     create index if not exists shopping_items_family_id_idx on shopping_items (family_id);
@@ -338,6 +396,9 @@ function initializeDatabase() {
     create index if not exists meal_plans_date_idx on meal_plans (date);
     create index if not exists calendar_events_family_id_idx on calendar_events (family_id);
     create index if not exists calendar_events_date_idx on calendar_events (event_date);
+    create index if not exists favorite_products_family_id_idx on favorite_products (family_id);
+    create index if not exists receipts_family_id_idx on receipts (family_id);
+    create index if not exists receipts_purchased_at_idx on receipts (purchased_at);
   `);
 }
 
