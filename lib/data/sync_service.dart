@@ -67,6 +67,24 @@ class SyncService {
       withStatus: (item, status) => item.copyWith(syncStatus: status),
       familyIdOf: (item) => item.familyId,
     );
+    final mealPlans = await _pushList<MealPlan>(
+      table: 'meal_plans',
+      familyId: familyId,
+      local: next.mealPlans,
+      toRemote: (item) => item.toRemote(),
+      statusOf: (item) => item.syncStatus,
+      withStatus: (item, status) => item.copyWith(syncStatus: status),
+      familyIdOf: (item) => item.familyId,
+    );
+    final calendarEvents = await _pushList<CalendarEvent>(
+      table: 'calendar_events',
+      familyId: familyId,
+      local: next.calendarEvents,
+      toRemote: (item) => item.toRemote(),
+      statusOf: (item) => item.syncStatus,
+      withStatus: (item, status) => item.copyWith(syncStatus: status),
+      familyIdOf: (item) => item.familyId,
+    );
 
     next = next.copyWith(
       members: members,
@@ -74,6 +92,8 @@ class SyncService {
       meals: meals,
       recipes: recipes,
       recipeIngredients: recipeIngredients,
+      mealPlans: mealPlans,
+      calendarEvents: calendarEvents,
     );
 
     final pulledMembers = await _pullList<Member>(
@@ -121,6 +141,24 @@ class SyncService {
       updatedAtOf: (item) => item.updatedAt,
       statusOf: (item) => item.syncStatus,
     );
+    final pulledMealPlans = await _pullList<MealPlan>(
+      table: 'meal_plans',
+      familyId: familyId,
+      local: next.mealPlans,
+      fromRemote: MealPlan.fromRemote,
+      idOf: (item) => item.id,
+      updatedAtOf: (item) => item.updatedAt,
+      statusOf: (item) => item.syncStatus,
+    );
+    final pulledCalendarEvents = await _pullList<CalendarEvent>(
+      table: 'calendar_events',
+      familyId: familyId,
+      local: next.calendarEvents,
+      fromRemote: CalendarEvent.fromRemote,
+      idOf: (item) => item.id,
+      updatedAtOf: (item) => item.updatedAt,
+      statusOf: (item) => item.syncStatus,
+    );
 
     final currentMember = _refreshCurrentMember(
       next.currentMember,
@@ -134,6 +172,8 @@ class SyncService {
       meals: pulledMeals,
       recipes: pulledRecipes,
       recipeIngredients: pulledRecipeIngredients,
+      mealPlans: pulledMealPlans,
+      calendarEvents: pulledCalendarEvents,
     );
   }
 
@@ -222,6 +262,22 @@ class SyncService {
           )
           .toList(),
       recipeIngredients: data.recipeIngredients
+          .map(
+            (item) => item.copyWith(
+              familyId: familyId,
+              syncStatus: SyncStatus.pending,
+            ),
+          )
+          .toList(),
+      mealPlans: data.mealPlans
+          .map(
+            (item) => item.copyWith(
+              familyId: familyId,
+              syncStatus: SyncStatus.pending,
+            ),
+          )
+          .toList(),
+      calendarEvents: data.calendarEvents
           .map(
             (item) => item.copyWith(
               familyId: familyId,

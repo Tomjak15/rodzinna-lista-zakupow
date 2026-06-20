@@ -5,7 +5,7 @@ To jest własny backend zamiast Supabase. Działa jako REST API w Node.js, Expre
 ## Co robi serwer
 
 - Tworzy bazę SQLite automatycznie przy starcie.
-- Tworzy tabele: `families`, `members`, `shopping_items`, `meals`, `recipes`, `recipe_ingredients`.
+- Tworzy tabele: `families`, `members`, `shopping_items`, `meals`, `recipes`, `recipe_ingredients`, `meal_plans`, `calendar_events`.
 - Udostępnia API dla aplikacji Flutter.
 - Przy konflikcie zapisów stosuje zasadę: nowsze `updated_at` wygrywa.
 
@@ -78,6 +78,8 @@ Dozwolone wartości `table`:
 - `meals`
 - `recipes`
 - `recipe_ingredients`
+- `meal_plans`
+- `calendar_events`
 
 ## Ważne
 

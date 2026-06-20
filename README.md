@@ -29,8 +29,8 @@ lib/
   app/                 Stan aplikacji, motyw i AppScope
   config/              Konfiguracja serwera przez --dart-define=SERVER_URL
   data/                Lokalny magazyn i synchronizacja z REST API
-  models/              Modele: rodziny, członkowie, produkty, obiady, przepisy
-  screens/             Ekrany: start, lista zakupów, obiady, rodzina, ustawienia
+  models/              Modele: rodziny, członkowie, produkty, obiady, przepisy, kalendarze
+  screens/             Ekrany: start, lista zakupów, obiady, kalendarz, rodzina, ustawienia
 server/
   index.js             Serwer Node/Express
   package.json         Zależności serwera
@@ -46,13 +46,19 @@ web/                   Manifest i konfiguracja PWA
 - Kod rodziny do kopiowania i wysyłania innym osobom.
 - Wspólna lista zakupów dla osób z tym samym kodem rodziny.
 - Dołączanie po kodzie jest potwierdzane przez serwer: aplikacja najpierw pobiera prawdziwą rodzinę po kodzie, zapisuje członka pod jej `familyId`, a dopiero potem wpuszcza użytkownika do aplikacji.
+- Lista zakupów w prostym stylu Listonic: szybkie wpisywanie i podpowiedzi produktów.
 - Dodawanie, edycja, usuwanie, zaznaczanie i odznaczanie produktów.
 - Automatyczne łączenie tego samego produktu z tą samą jednostką.
 - Zakładka `Obiady` z przepisami, składnikami i porcjami bazowymi.
+- Składniki przepisu są wpisywane w osobnych polach: składnik, ilość, jednostka.
 - Podprzepisy/dodatki przypisane do głównego obiadu.
 - Dodawanie do listy zakupów: tylko główny przepis, wybrane dodatki albo wszystkie dodatki.
 - Proporcjonalne przeliczanie składników według liczby porcji.
 - Scalanie powtarzających się składników przy dodawaniu do listy.
+- Zakładka `Kalendarz`: planowanie posiłków na konkretny dzień.
+- Zaplanowanie posiłku automatycznie przelicza porcje i dodaje składniki do listy zakupów.
+- Wydarzenia rodzinne: wpisy dla całej rodziny albo konkretnej osoby.
+- Twórca rodziny może dodać dodatkowe osoby do kalendarza.
 - Status `oczekuje na synchronizację` przy elementach zapisanych lokalnie.
 - Stała synchronizacja w tle co kilka sekund, gdy aplikacja ma internet i skonfigurowany serwer.
 

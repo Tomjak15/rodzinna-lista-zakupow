@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../app/app_scope.dart';
 import '../models/entities.dart';
 import '../models/ingredient_draft.dart';
-import '../utils/ingredient_parser.dart';
 
 class MealsScreen extends StatelessWidget {
   const MealsScreen({super.key});
@@ -285,7 +284,7 @@ class _RecipeDialog extends StatefulWidget {
 
   final String title;
   final Recipe? recipe;
-  final String? initialIngredients;
+  final List<IngredientDraft>? initialIngredients;
 
   @override
   State<_RecipeDialog> createState() => _RecipeDialogState();
@@ -296,8 +295,7 @@ class _RecipeDialogState extends State<_RecipeDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _instructionsController;
   late final TextEditingController _servingsController;
-  late final TextEditingController _ingredientsController;
-  late List<IngredientDraft> _parsedIngredients;
+  late final List<_IngredientLineController> _ingredientLines;
 
   @override
   void initState() {
@@ -310,20 +308,22 @@ class _RecipeDialogState extends State<_RecipeDialog> {
     _servingsController = TextEditingController(
       text: recipe?.baseServings.toString() ?? '4',
     );
-    _ingredientsController = TextEditingController(
-      text: widget.initialIngredients ?? '',
-    );
-    _parsedIngredients = parseIngredientLines(_ingredientsController.text);
-    _ingredientsController.addListener(_refreshParsedIngredients);
+    final initialIngredients = widget.initialIngredients ?? const [];
+    _ingredientLines = initialIngredients.isEmpty
+        ? [_IngredientLineController()]
+        : initialIngredients
+              .map((ingredient) => _IngredientLineController.from(ingredient))
+              .toList();
   }
 
   @override
   void dispose() {
-    _ingredientsController.removeListener(_refreshParsedIngredients);
     _nameController.dispose();
     _instructionsController.dispose();
     _servingsController.dispose();
-    _ingredientsController.dispose();
+    for (final line in _ingredientLines) {
+      line.dispose();
+    }
     super.dispose();
   }
 
@@ -370,22 +370,31 @@ class _RecipeDialogState extends State<_RecipeDialog> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
-                  controller: _ingredientsController,
-                  minLines: 5,
-                  maxLines: 9,
-                  keyboardType: TextInputType.multiline,
-                  decoration: const InputDecoration(
-                    labelText: 'Składniki',
-                    hintText: 'marchew 200 g\n2 jajka\nryż; 1; szklanka',
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Składniki',
+                    style: Theme.of(context).textTheme.titleSmall,
                   ),
-                  validator: (value) =>
-                      parseIngredientLines(value ?? '').isEmpty
-                      ? 'Dodaj przynajmniej jeden składnik'
-                      : null,
                 ),
                 const SizedBox(height: 8),
-                _IngredientPreview(ingredients: _parsedIngredients),
+                ...List.generate(
+                  _ingredientLines.length,
+                  (index) => _IngredientLineEditor(
+                    line: _ingredientLines[index],
+                    canRemove: _ingredientLines.length > 1,
+                    onRemove: () => _removeIngredientLine(index),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: _addIngredientLine,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Dodaj składnik'),
+                  ),
+                ),
               ],
             ),
           ),
@@ -405,7 +414,13 @@ class _RecipeDialogState extends State<_RecipeDialog> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
-    final ingredients = parseIngredientLines(_ingredientsController.text);
+    final ingredients = _ingredientLines
+        .map((line) => line.toDraft())
+        .whereType<IngredientDraft>()
+        .toList();
+    if (ingredients.isEmpty) {
+      return;
+    }
     Navigator.pop(
       context,
       _RecipeDraft(
@@ -417,49 +432,123 @@ class _RecipeDialogState extends State<_RecipeDialog> {
     );
   }
 
-  void _refreshParsedIngredients() {
+  void _addIngredientLine() {
     setState(() {
-      _parsedIngredients = parseIngredientLines(_ingredientsController.text);
+      _ingredientLines.add(_IngredientLineController());
+    });
+  }
+
+  void _removeIngredientLine(int index) {
+    setState(() {
+      final removed = _ingredientLines.removeAt(index);
+      removed.dispose();
     });
   }
 }
 
-class _IngredientPreview extends StatelessWidget {
-  const _IngredientPreview({required this.ingredients});
+class _IngredientLineController {
+  _IngredientLineController()
+    : nameController = TextEditingController(),
+      quantityController = TextEditingController(text: '1'),
+      unitController = TextEditingController(text: 'szt.');
 
-  final List<IngredientDraft> ingredients;
+  _IngredientLineController.from(IngredientDraft ingredient)
+    : nameController = TextEditingController(text: ingredient.name),
+      quantityController = TextEditingController(
+        text: formatQuantity(ingredient.quantity),
+      ),
+      unitController = TextEditingController(text: ingredient.unit);
+
+  final TextEditingController nameController;
+  final TextEditingController quantityController;
+  final TextEditingController unitController;
+
+  IngredientDraft? toDraft() {
+    final name = nameController.text.trim();
+    final quantity =
+        double.tryParse(quantityController.text.replaceAll(',', '.')) ?? 0;
+    if (name.isEmpty || quantity <= 0) {
+      return null;
+    }
+    return IngredientDraft(
+      name: name,
+      quantity: quantity,
+      unit: unitController.text.trim().isEmpty
+          ? 'szt.'
+          : unitController.text.trim(),
+    );
+  }
+
+  void dispose() {
+    nameController.dispose();
+    quantityController.dispose();
+    unitController.dispose();
+  }
+}
+
+class _IngredientLineEditor extends StatelessWidget {
+  const _IngredientLineEditor({
+    required this.line,
+    required this.canRemove,
+    required this.onRemove,
+  });
+
+  final _IngredientLineController line;
+  final bool canRemove;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
-    if (ingredients.isEmpty) {
-      return Align(
-        alignment: Alignment.centerLeft,
-        child: Text(
-          'Wpisz każdy składnik w osobnej linii',
-          style: textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurfaceVariant,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE5DDCE)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          TextFormField(
+            controller: line.nameController,
+            decoration: const InputDecoration(labelText: 'Składnik'),
+            textInputAction: TextInputAction.next,
+            validator: (value) =>
+                value == null || value.trim().isEmpty ? 'Wpisz składnik' : null,
           ),
-        ),
-      );
-    }
-
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Wrap(
-        spacing: 6,
-        runSpacing: 6,
-        children: ingredients
-            .map(
-              (ingredient) => InputChip(
-                avatar: const Icon(Icons.check, size: 16),
-                label: Text(
-                  '${ingredient.name}: ${formatQuantity(ingredient.quantity)} ${ingredient.unit}',
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: line.quantityController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(labelText: 'Ilość'),
+                  validator: (value) {
+                    final parsed =
+                        double.tryParse((value ?? '').replaceAll(',', '.')) ??
+                        0;
+                    return parsed <= 0 ? 'Podaj ilość' : null;
+                  },
                 ),
               ),
-            )
-            .toList(),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: line.unitController,
+                  decoration: const InputDecoration(labelText: 'Jednostka'),
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: 'Usuń składnik',
+                onPressed: canRemove ? onRemove : null,
+                icon: const Icon(Icons.delete_outline),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -661,9 +750,16 @@ Future<void> _openRecipeDialog(
     builder: (_) => _RecipeDialog(
       title: recipe.isSubRecipe ? 'Edytuj podprzepis' : 'Edytuj przepis',
       recipe: recipe,
-      initialIngredients: recipeIngredientsToText(
-        appState.ingredientsForRecipe(recipe.id),
-      ),
+      initialIngredients: appState
+          .ingredientsForRecipe(recipe.id)
+          .map(
+            (ingredient) => IngredientDraft(
+              name: ingredient.name,
+              quantity: ingredient.quantity,
+              unit: ingredient.unit,
+            ),
+          )
+          .toList(),
     ),
   );
   if (draft == null || !context.mounted) {

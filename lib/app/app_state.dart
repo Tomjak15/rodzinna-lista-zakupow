@@ -54,6 +54,10 @@ class AppState extends ChangeNotifier {
   DateTime? get lastSyncAt => _lastSyncAt;
   String? get lastSyncError => _lastSyncError;
   int get pendingCount => _data.pendingCount;
+  bool get isFamilyCreator =>
+      _data.family != null &&
+      _data.currentMember != null &&
+      _data.family!.createdBy == _data.currentMember!.id;
 
   Future<void> initialize() async {
     _data = await _store.loadAll();
@@ -209,6 +213,39 @@ class AppState extends ChangeNotifier {
     } catch (error) {
       throw AppActionException('Nie udało się dołączyć do rodziny: $error');
     }
+  }
+
+  Future<void> addCalendarMember({required String name}) async {
+    final family = _data.family;
+    final creator = _data.currentMember;
+    if (family == null || creator == null) {
+      return;
+    }
+    if (!isFamilyCreator) {
+      throw const AppActionException(
+        'Tylko twórca rodziny może dodawać osoby do kalendarza.',
+      );
+    }
+    final cleanName = name.trim();
+    if (cleanName.isEmpty) {
+      return;
+    }
+    final now = DateTime.now().toUtc();
+    final member = Member(
+      id: _uuid.v4(),
+      familyId: family.id,
+      name: cleanName,
+      email: null,
+      phone: null,
+      avatar: null,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: creator.id,
+      isDeleted: false,
+      syncStatus: SyncStatus.pending,
+    );
+    _data = _data.copyWith(members: [..._data.members, member]);
+    await _persist(scheduleSync: true);
   }
 
   Future<void> addShoppingItem({
@@ -497,6 +534,17 @@ class AppState extends ChangeNotifier {
                 : entry,
           )
           .toList(),
+      mealPlans: _data.mealPlans
+          .map(
+            (entry) => entry.mealId == meal.id
+                ? entry.copyWith(
+                    isDeleted: true,
+                    updatedAt: now,
+                    syncStatus: SyncStatus.pending,
+                  )
+                : entry,
+          )
+          .toList(),
     );
     await _persist(scheduleSync: true);
   }
@@ -505,41 +553,149 @@ class AppState extends ChangeNotifier {
     required List<String> recipeIds,
     required int servings,
   }) async {
-    final selectedRecipes = _data.activeRecipes
-        .where((recipe) => recipeIds.contains(recipe.id))
-        .toList();
-    if (selectedRecipes.isEmpty) {
-      return;
-    }
-
-    final scaledIngredients = <IngredientDraft>[];
-    for (final recipe in selectedRecipes) {
-      final factor = servings / max(1, recipe.baseServings);
-      for (final ingredient in ingredientsForRecipe(recipe.id)) {
-        scaledIngredients.add(
-          IngredientDraft(
-            name: ingredient.name,
-            quantity: ingredient.quantity * factor,
-            unit: ingredient.unit,
-          ),
-        );
-      }
-    }
-
-    final groupedIngredients = mergeIngredientDrafts(scaledIngredients);
-    if (groupedIngredients.isEmpty) {
-      return;
-    }
-
     final now = DateTime.now().toUtc();
-    for (final item in groupedIngredients) {
-      _mergeShoppingItem(
-        name: item.name,
-        quantity: item.quantity,
-        unit: item.unit,
-        now: now,
-      );
+    if (!_mergeRecipesToShoppingList(
+      recipeIds: recipeIds,
+      servings: servings,
+      now: now,
+    )) {
+      return;
     }
+    await _persist(scheduleSync: true);
+  }
+
+  Future<void> addMealPlanToCalendar({
+    required DateTime date,
+    required Meal meal,
+    required List<String> recipeIds,
+    required int servings,
+  }) async {
+    final family = _data.family;
+    final member = _data.currentMember;
+    if (family == null || member == null || recipeIds.isEmpty) {
+      return;
+    }
+    final now = DateTime.now().toUtc();
+    final cleanServings = max(1, servings);
+    final addedToShopping = _mergeRecipesToShoppingList(
+      recipeIds: recipeIds,
+      servings: cleanServings,
+      now: now,
+    );
+    if (!addedToShopping) {
+      return;
+    }
+    final plan = MealPlan(
+      id: _uuid.v4(),
+      familyId: family.id,
+      date: _dateOnlyUtc(date),
+      mealId: meal.id,
+      recipeIds: recipeIds,
+      servings: cleanServings,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: member.id,
+      isDeleted: false,
+      syncStatus: SyncStatus.pending,
+    );
+    _data = _data.copyWith(mealPlans: [..._data.mealPlans, plan]);
+    await _persist(scheduleSync: true);
+  }
+
+  Future<void> deleteMealPlan(MealPlan plan) async {
+    final now = DateTime.now().toUtc();
+    _data = _data.copyWith(
+      mealPlans: _data.mealPlans
+          .map(
+            (entry) => entry.id == plan.id
+                ? entry.copyWith(
+                    isDeleted: true,
+                    updatedAt: now,
+                    syncStatus: SyncStatus.pending,
+                  )
+                : entry,
+          )
+          .toList(),
+    );
+    await _persist(scheduleSync: true);
+  }
+
+  Future<void> addCalendarEvent({
+    required DateTime date,
+    required String title,
+    required String notes,
+    required String? memberId,
+    required bool isFamilyWide,
+  }) async {
+    final family = _data.family;
+    final member = _data.currentMember;
+    if (family == null || member == null || title.trim().isEmpty) {
+      return;
+    }
+    final now = DateTime.now().toUtc();
+    final event = CalendarEvent(
+      id: _uuid.v4(),
+      familyId: family.id,
+      date: _dateOnlyUtc(date),
+      title: title.trim(),
+      notes: notes.trim(),
+      memberId: isFamilyWide ? null : memberId,
+      isFamilyWide: isFamilyWide,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: member.id,
+      isDeleted: false,
+      syncStatus: SyncStatus.pending,
+    );
+    _data = _data.copyWith(calendarEvents: [..._data.calendarEvents, event]);
+    await _persist(scheduleSync: true);
+  }
+
+  Future<void> updateCalendarEvent({
+    required CalendarEvent event,
+    required DateTime date,
+    required String title,
+    required String notes,
+    required String? memberId,
+    required bool isFamilyWide,
+  }) async {
+    final now = DateTime.now().toUtc();
+    _data = _data.copyWith(
+      calendarEvents: _data.calendarEvents
+          .map(
+            (entry) => entry.id == event.id
+                ? entry.copyWith(
+                    date: _dateOnlyUtc(date),
+                    title: title.trim(),
+                    notes: notes.trim(),
+                    memberId: isFamilyWide ? null : memberId,
+                    clearMemberId: isFamilyWide,
+                    isFamilyWide: isFamilyWide,
+                    updatedAt: now,
+                    syncStatus: SyncStatus.pending,
+                  )
+                : entry,
+          )
+          .toList(),
+    );
+    await _persist(scheduleSync: true);
+  }
+
+  Future<void> deleteCalendarEvent(CalendarEvent event) async {
+    final now = DateTime.now().toUtc();
+    _data = _data.copyWith(
+      calendarEvents: _data.calendarEvents
+          .map(
+            (entry) => entry.id == event.id
+                ? entry.copyWith(
+                    isDeleted: true,
+                    updatedAt: now,
+                    syncStatus: SyncStatus.pending,
+                  )
+                : entry,
+          )
+          .toList(),
+    );
     await _persist(scheduleSync: true);
   }
 
@@ -564,6 +720,40 @@ class AppState extends ChangeNotifier {
         .where((ingredient) => ingredient.recipeId == recipeId)
         .toList()
       ..sort((a, b) => a.name.compareTo(b.name));
+  }
+
+  List<MealPlan> mealPlansForDate(DateTime date) {
+    final cleanDate = _dateOnlyUtc(date);
+    return _data.activeMealPlans
+        .where((plan) => _isSameUtcDate(plan.date, cleanDate))
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+  }
+
+  List<CalendarEvent> calendarEventsForDate(DateTime date) {
+    final cleanDate = _dateOnlyUtc(date);
+    return _data.activeCalendarEvents
+        .where((event) => _isSameUtcDate(event.date, cleanDate))
+        .toList()
+      ..sort((a, b) => a.title.compareTo(b.title));
+  }
+
+  Meal? mealById(String id) {
+    for (final meal in _data.activeMeals) {
+      if (meal.id == id) {
+        return meal;
+      }
+    }
+    return null;
+  }
+
+  Member? memberById(String id) {
+    for (final member in _data.activeMembers) {
+      if (member.id == id) {
+        return member;
+      }
+    }
+    return null;
   }
 
   Future<void> syncNow() async {
@@ -629,6 +819,48 @@ class AppState extends ChangeNotifier {
     _syncDebounce?.cancel();
     _syncService?.dispose();
     super.dispose();
+  }
+
+  bool _mergeRecipesToShoppingList({
+    required List<String> recipeIds,
+    required int servings,
+    required DateTime now,
+  }) {
+    final selectedRecipes = _data.activeRecipes
+        .where((recipe) => recipeIds.contains(recipe.id))
+        .toList();
+    if (selectedRecipes.isEmpty) {
+      return false;
+    }
+
+    final scaledIngredients = <IngredientDraft>[];
+    for (final recipe in selectedRecipes) {
+      final factor = servings / max(1, recipe.baseServings);
+      for (final ingredient in ingredientsForRecipe(recipe.id)) {
+        scaledIngredients.add(
+          IngredientDraft(
+            name: ingredient.name,
+            quantity: ingredient.quantity * factor,
+            unit: ingredient.unit,
+          ),
+        );
+      }
+    }
+
+    final groupedIngredients = mergeIngredientDrafts(scaledIngredients);
+    if (groupedIngredients.isEmpty) {
+      return false;
+    }
+
+    for (final item in groupedIngredients) {
+      _mergeShoppingItem(
+        name: item.name,
+        quantity: item.quantity,
+        unit: item.unit,
+        now: now,
+      );
+    }
+    return true;
   }
 
   List<RecipeIngredient> _ingredientEntities(
@@ -756,5 +988,16 @@ class AppState extends ChangeNotifier {
   String _generateFamilyCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     return List.generate(6, (_) => chars[_random.nextInt(chars.length)]).join();
+  }
+
+  DateTime _dateOnlyUtc(DateTime date) {
+    final local = date.toLocal();
+    return DateTime.utc(local.year, local.month, local.day);
+  }
+
+  bool _isSameUtcDate(DateTime first, DateTime second) {
+    return first.toUtc().year == second.toUtc().year &&
+        first.toUtc().month == second.toUtc().month &&
+        first.toUtc().day == second.toUtc().day;
   }
 }

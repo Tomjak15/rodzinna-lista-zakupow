@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../app/app_scope.dart';
+import 'calendar_screen.dart';
 import 'family_screen.dart';
 import 'meals_screen.dart';
 import 'settings_screen.dart';
@@ -17,7 +17,13 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
-  static const _titles = ['Lista zakupów', 'Obiady', 'Rodzina', 'Ustawienia'];
+  static const _titles = [
+    'Lista zakupów',
+    'Obiady',
+    'Kalendarz',
+    'Rodzina',
+    'Ustawienia',
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -38,20 +44,14 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          const _SyncBanner(),
-          Expanded(
-            child: IndexedStack(
-              index: _index,
-              children: const [
-                ShoppingScreen(),
-                MealsScreen(),
-                FamilyScreen(),
-                SettingsScreen(),
-              ],
-            ),
-          ),
+      body: IndexedStack(
+        index: _index,
+        children: const [
+          ShoppingScreen(),
+          MealsScreen(),
+          CalendarScreen(),
+          FamilyScreen(),
+          SettingsScreen(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -61,12 +61,17 @@ class _HomeShellState extends State<HomeShell> {
           NavigationDestination(
             icon: Icon(Icons.shopping_cart_outlined),
             selectedIcon: Icon(Icons.shopping_cart),
-            label: 'Lista zakupów',
+            label: 'Lista',
           ),
           NavigationDestination(
             icon: Icon(Icons.restaurant_menu_outlined),
             selectedIcon: Icon(Icons.restaurant_menu),
             label: 'Obiady',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.calendar_month_outlined),
+            selectedIcon: Icon(Icons.calendar_month),
+            label: 'Kalendarz',
           ),
           NavigationDestination(
             icon: Icon(Icons.groups_outlined),
@@ -77,60 +82,6 @@ class _HomeShellState extends State<HomeShell> {
             icon: Icon(Icons.settings_outlined),
             selectedIcon: Icon(Icons.settings),
             label: 'Ustawienia',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SyncBanner extends StatelessWidget {
-  const _SyncBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    final appState = AppScope.of(context);
-    final scheme = Theme.of(context).colorScheme;
-    IconData icon;
-    String text;
-    Color color;
-
-    if (!appState.backendConfigured) {
-      icon = Icons.cloud_off_outlined;
-      text =
-          'Tryb lokalny - skonfiguruj SERVER_URL, aby włączyć synchronizację.';
-      color = scheme.tertiaryContainer;
-    } else if (!appState.online) {
-      icon = Icons.wifi_off_outlined;
-      text = 'Offline - zmiany oczekują na synchronizację.';
-      color = scheme.errorContainer;
-    } else if (appState.syncing) {
-      icon = Icons.sync;
-      text = 'Synchronizacja...';
-      color = scheme.secondaryContainer;
-    } else if (appState.pendingCount > 0) {
-      icon = Icons.schedule_outlined;
-      text = '${appState.pendingCount} zmian oczekuje na synchronizację.';
-      color = scheme.tertiaryContainer;
-    } else {
-      final lastSync = appState.lastSyncAt == null
-          ? 'gotowe'
-          : DateFormat('dd.MM, HH:mm').format(appState.lastSyncAt!);
-      icon = Icons.cloud_done_outlined;
-      text = 'Połączono z serwerem - ostatnia aktualizacja: $lastSync';
-      color = scheme.primaryContainer;
-    }
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: color,
-      child: Row(
-        children: [
-          Icon(icon, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(text, style: Theme.of(context).textTheme.bodySmall),
           ),
         ],
       ),

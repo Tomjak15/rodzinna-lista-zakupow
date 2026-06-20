@@ -112,6 +112,39 @@ const tables = {
     boolColumns: ["is_deleted"],
     numberColumns: ["quantity"],
   },
+  meal_plans: {
+    columns: [
+      "id",
+      "family_id",
+      "date",
+      "meal_id",
+      "recipe_ids",
+      "servings",
+      "created_at",
+      "updated_at",
+      "created_by",
+      "is_deleted",
+    ],
+    boolColumns: ["is_deleted"],
+    numberColumns: ["servings"],
+  },
+  calendar_events: {
+    columns: [
+      "id",
+      "family_id",
+      "event_date",
+      "title",
+      "notes",
+      "member_id",
+      "is_family_wide",
+      "created_at",
+      "updated_at",
+      "created_by",
+      "is_deleted",
+    ],
+    boolColumns: ["is_family_wide", "is_deleted"],
+    numberColumns: [],
+  },
 };
 
 initializeDatabase();
@@ -265,6 +298,33 @@ function initializeDatabase() {
       is_deleted integer not null default 0
     );
 
+    create table if not exists meal_plans (
+      id text primary key,
+      family_id text not null references families(id) on delete cascade,
+      date text not null,
+      meal_id text not null references meals(id) on delete cascade,
+      recipe_ids text not null default '',
+      servings integer not null default 1,
+      created_at text not null,
+      updated_at text not null,
+      created_by text not null,
+      is_deleted integer not null default 0
+    );
+
+    create table if not exists calendar_events (
+      id text primary key,
+      family_id text not null references families(id) on delete cascade,
+      event_date text not null,
+      title text not null,
+      notes text not null default '',
+      member_id text references members(id) on delete set null,
+      is_family_wide integer not null default 1,
+      created_at text not null,
+      updated_at text not null,
+      created_by text not null,
+      is_deleted integer not null default 0
+    );
+
     create index if not exists families_code_idx on families (code);
     create index if not exists members_family_id_idx on members (family_id);
     create index if not exists shopping_items_family_id_idx on shopping_items (family_id);
@@ -274,6 +334,10 @@ function initializeDatabase() {
     create index if not exists recipes_parent_recipe_id_idx on recipes (parent_recipe_id);
     create index if not exists recipe_ingredients_family_id_idx on recipe_ingredients (family_id);
     create index if not exists recipe_ingredients_recipe_id_idx on recipe_ingredients (recipe_id);
+    create index if not exists meal_plans_family_id_idx on meal_plans (family_id);
+    create index if not exists meal_plans_date_idx on meal_plans (date);
+    create index if not exists calendar_events_family_id_idx on calendar_events (family_id);
+    create index if not exists calendar_events_date_idx on calendar_events (event_date);
   `);
 }
 

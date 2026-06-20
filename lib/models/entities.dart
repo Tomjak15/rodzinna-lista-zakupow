@@ -50,6 +50,23 @@ bool boolFromJson(Object? value) {
   return false;
 }
 
+List<String> stringListFromJson(Object? value) {
+  if (value is List) {
+    return value
+        .map((item) => item.toString().trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+  if (value is String) {
+    return value
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+  return [];
+}
+
 String? nullableString(Object? value) {
   final text = value?.toString().trim();
   if (text == null || text.isEmpty) {
@@ -81,6 +98,8 @@ class AppData {
     required this.meals,
     required this.recipes,
     required this.recipeIngredients,
+    required this.mealPlans,
+    required this.calendarEvents,
   });
 
   factory AppData.empty() {
@@ -92,6 +111,8 @@ class AppData {
       meals: [],
       recipes: [],
       recipeIngredients: [],
+      mealPlans: [],
+      calendarEvents: [],
     );
   }
 
@@ -102,6 +123,8 @@ class AppData {
   final List<Meal> meals;
   final List<Recipe> recipes;
   final List<RecipeIngredient> recipeIngredients;
+  final List<MealPlan> mealPlans;
+  final List<CalendarEvent> calendarEvents;
 
   List<Member> get activeMembers =>
       members.where((member) => !member.isDeleted).toList();
@@ -116,6 +139,12 @@ class AppData {
 
   List<RecipeIngredient> get activeRecipeIngredients =>
       recipeIngredients.where((ingredient) => !ingredient.isDeleted).toList();
+
+  List<MealPlan> get activeMealPlans =>
+      mealPlans.where((plan) => !plan.isDeleted).toList();
+
+  List<CalendarEvent> get activeCalendarEvents =>
+      calendarEvents.where((event) => !event.isDeleted).toList();
 
   int get pendingCount {
     var count = 0;
@@ -135,6 +164,12 @@ class AppData {
     count += recipeIngredients
         .where((item) => item.syncStatus != SyncStatus.synced)
         .length;
+    count += mealPlans
+        .where((item) => item.syncStatus != SyncStatus.synced)
+        .length;
+    count += calendarEvents
+        .where((item) => item.syncStatus != SyncStatus.synced)
+        .length;
     return count;
   }
 
@@ -146,6 +181,8 @@ class AppData {
     List<Meal>? meals,
     List<Recipe>? recipes,
     List<RecipeIngredient>? recipeIngredients,
+    List<MealPlan>? mealPlans,
+    List<CalendarEvent>? calendarEvents,
     bool clearFamily = false,
     bool clearMember = false,
   }) {
@@ -157,6 +194,8 @@ class AppData {
       meals: meals ?? this.meals,
       recipes: recipes ?? this.recipes,
       recipeIngredients: recipeIngredients ?? this.recipeIngredients,
+      mealPlans: mealPlans ?? this.mealPlans,
+      calendarEvents: calendarEvents ?? this.calendarEvents,
     );
   }
 }
@@ -866,6 +905,257 @@ class RecipeIngredient {
       name: name ?? this.name,
       quantity: quantity ?? this.quantity,
       unit: unit ?? this.unit,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      createdBy: createdBy ?? this.createdBy,
+      isDeleted: isDeleted ?? this.isDeleted,
+      syncStatus: syncStatus ?? this.syncStatus,
+    );
+  }
+}
+
+class MealPlan {
+  const MealPlan({
+    required this.id,
+    required this.familyId,
+    required this.date,
+    required this.mealId,
+    required this.recipeIds,
+    required this.servings,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.createdBy,
+    required this.isDeleted,
+    required this.syncStatus,
+  });
+
+  factory MealPlan.fromJson(Map<String, dynamic> json) {
+    return MealPlan(
+      id: json['id'].toString(),
+      familyId: (json['familyId'] ?? json['family_id']).toString(),
+      date: dateFromJson(json['date']),
+      mealId: (json['mealId'] ?? json['meal_id']).toString(),
+      recipeIds: stringListFromJson(json['recipeIds'] ?? json['recipe_ids']),
+      servings: intFromJson(json['servings']),
+      createdAt: dateFromJson(json['createdAt'] ?? json['created_at']),
+      updatedAt: dateFromJson(json['updatedAt'] ?? json['updated_at']),
+      createdBy:
+          json['createdBy']?.toString() ?? json['created_by']?.toString() ?? '',
+      isDeleted: boolFromJson(json['isDeleted'] ?? json['is_deleted']),
+      syncStatus: syncStatusFromJson(json['syncStatus']),
+    );
+  }
+
+  factory MealPlan.fromRemote(Map<String, dynamic> json) {
+    return MealPlan(
+      id: json['id'].toString(),
+      familyId: json['family_id'].toString(),
+      date: dateFromJson(json['date']),
+      mealId: json['meal_id'].toString(),
+      recipeIds: stringListFromJson(json['recipe_ids']),
+      servings: intFromJson(json['servings']),
+      createdAt: dateFromJson(json['created_at']),
+      updatedAt: dateFromJson(json['updated_at']),
+      createdBy: json['created_by']?.toString() ?? '',
+      isDeleted: boolFromJson(json['is_deleted'] ?? json['deleted']),
+      syncStatus: SyncStatus.synced,
+    );
+  }
+
+  final String id;
+  final String familyId;
+  final DateTime date;
+  final String mealId;
+  final List<String> recipeIds;
+  final int servings;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String createdBy;
+  final bool isDeleted;
+  final SyncStatus syncStatus;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'familyId': familyId,
+      'date': date.toIso8601String(),
+      'mealId': mealId,
+      'recipeIds': recipeIds,
+      'servings': servings,
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+      'createdBy': createdBy,
+      'isDeleted': isDeleted,
+      'syncStatus': syncStatus.name,
+    };
+  }
+
+  Map<String, dynamic> toRemote() {
+    return {
+      'id': id,
+      'family_id': familyId,
+      'date': date.toIso8601String(),
+      'meal_id': mealId,
+      'recipe_ids': recipeIds.join(','),
+      'servings': servings,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+      'created_by': createdBy,
+      'is_deleted': isDeleted,
+    };
+  }
+
+  MealPlan copyWith({
+    String? id,
+    String? familyId,
+    DateTime? date,
+    String? mealId,
+    List<String>? recipeIds,
+    int? servings,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? createdBy,
+    bool? isDeleted,
+    SyncStatus? syncStatus,
+  }) {
+    return MealPlan(
+      id: id ?? this.id,
+      familyId: familyId ?? this.familyId,
+      date: date ?? this.date,
+      mealId: mealId ?? this.mealId,
+      recipeIds: recipeIds ?? this.recipeIds,
+      servings: servings ?? this.servings,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      createdBy: createdBy ?? this.createdBy,
+      isDeleted: isDeleted ?? this.isDeleted,
+      syncStatus: syncStatus ?? this.syncStatus,
+    );
+  }
+}
+
+class CalendarEvent {
+  const CalendarEvent({
+    required this.id,
+    required this.familyId,
+    required this.date,
+    required this.title,
+    required this.notes,
+    required this.memberId,
+    required this.isFamilyWide,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.createdBy,
+    required this.isDeleted,
+    required this.syncStatus,
+  });
+
+  factory CalendarEvent.fromJson(Map<String, dynamic> json) {
+    return CalendarEvent(
+      id: json['id'].toString(),
+      familyId: (json['familyId'] ?? json['family_id']).toString(),
+      date: dateFromJson(json['date'] ?? json['event_date']),
+      title: json['title']?.toString() ?? '',
+      notes: json['notes']?.toString() ?? '',
+      memberId: nullableString(json['memberId'] ?? json['member_id']),
+      isFamilyWide: boolFromJson(
+        json['isFamilyWide'] ?? json['is_family_wide'],
+      ),
+      createdAt: dateFromJson(json['createdAt'] ?? json['created_at']),
+      updatedAt: dateFromJson(json['updatedAt'] ?? json['updated_at']),
+      createdBy:
+          json['createdBy']?.toString() ?? json['created_by']?.toString() ?? '',
+      isDeleted: boolFromJson(json['isDeleted'] ?? json['is_deleted']),
+      syncStatus: syncStatusFromJson(json['syncStatus']),
+    );
+  }
+
+  factory CalendarEvent.fromRemote(Map<String, dynamic> json) {
+    return CalendarEvent(
+      id: json['id'].toString(),
+      familyId: json['family_id'].toString(),
+      date: dateFromJson(json['event_date']),
+      title: json['title']?.toString() ?? '',
+      notes: json['notes']?.toString() ?? '',
+      memberId: nullableString(json['member_id']),
+      isFamilyWide: boolFromJson(json['is_family_wide']),
+      createdAt: dateFromJson(json['created_at']),
+      updatedAt: dateFromJson(json['updated_at']),
+      createdBy: json['created_by']?.toString() ?? '',
+      isDeleted: boolFromJson(json['is_deleted'] ?? json['deleted']),
+      syncStatus: SyncStatus.synced,
+    );
+  }
+
+  final String id;
+  final String familyId;
+  final DateTime date;
+  final String title;
+  final String notes;
+  final String? memberId;
+  final bool isFamilyWide;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String createdBy;
+  final bool isDeleted;
+  final SyncStatus syncStatus;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'familyId': familyId,
+      'date': date.toIso8601String(),
+      'title': title,
+      'notes': notes,
+      'memberId': memberId,
+      'isFamilyWide': isFamilyWide,
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+      'createdBy': createdBy,
+      'isDeleted': isDeleted,
+      'syncStatus': syncStatus.name,
+    };
+  }
+
+  Map<String, dynamic> toRemote() {
+    return {
+      'id': id,
+      'family_id': familyId,
+      'event_date': date.toIso8601String(),
+      'title': title,
+      'notes': notes,
+      'member_id': memberId,
+      'is_family_wide': isFamilyWide,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+      'created_by': createdBy,
+      'is_deleted': isDeleted,
+    };
+  }
+
+  CalendarEvent copyWith({
+    String? id,
+    String? familyId,
+    DateTime? date,
+    String? title,
+    String? notes,
+    String? memberId,
+    bool clearMemberId = false,
+    bool? isFamilyWide,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? createdBy,
+    bool? isDeleted,
+    SyncStatus? syncStatus,
+  }) {
+    return CalendarEvent(
+      id: id ?? this.id,
+      familyId: familyId ?? this.familyId,
+      date: date ?? this.date,
+      title: title ?? this.title,
+      notes: notes ?? this.notes,
+      memberId: clearMemberId ? null : memberId ?? this.memberId,
+      isFamilyWide: isFamilyWide ?? this.isFamilyWide,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       createdBy: createdBy ?? this.createdBy,
