@@ -4,6 +4,7 @@ import '../app/app_scope.dart';
 import 'calendar_screen.dart';
 import 'family_screen.dart';
 import 'meals_screen.dart';
+import 'receipts_screen.dart';
 import 'settings_screen.dart';
 import 'shopping_screen.dart';
 
@@ -21,6 +22,7 @@ class _HomeShellState extends State<HomeShell> {
     'Lista zakupów',
     'Obiady',
     'Kalendarz',
+    'Paragony',
     'Rodzina',
     'Ustawienia',
   ];
@@ -50,6 +52,7 @@ class _HomeShellState extends State<HomeShell> {
           ShoppingScreen(),
           MealsScreen(),
           CalendarScreen(),
+          ReceiptsScreen(),
           FamilyScreen(),
           SettingsScreen(),
         ],
@@ -72,6 +75,11 @@ class _HomeShellState extends State<HomeShell> {
             icon: Icon(Icons.calendar_month_outlined),
             selectedIcon: Icon(Icons.calendar_month),
             label: 'Kalendarz',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long),
+            label: 'Paragony',
           ),
           NavigationDestination(
             icon: Icon(Icons.groups_outlined),

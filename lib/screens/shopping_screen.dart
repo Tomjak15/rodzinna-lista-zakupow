@@ -5,7 +5,6 @@ import '../app/app_scope.dart';
 import '../data/product_catalog.dart';
 import '../models/entities.dart';
 import '../utils/product_category.dart';
-import '../utils/receipt_parser.dart';
 
 class ShoppingScreen extends StatefulWidget {
   const ShoppingScreen({super.key});
@@ -33,7 +32,6 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
             shopMode: _shopMode,
             onShopModeChanged: (value) => setState(() => _shopMode = value),
             onOpenFavorites: () => _openFavoritesSheet(context),
-            onOpenReceipts: () => _openReceiptsSheet(context),
           ),
           if (_shopMode)
             _ShopModeBanner(
@@ -142,15 +140,6 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
       builder: (_) => const _FavoritesSheet(),
     );
   }
-
-  Future<void> _openReceiptsSheet(BuildContext context) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => const _ReceiptsSheet(),
-    );
-  }
 }
 
 class _ShoppingToolbar extends StatelessWidget {
@@ -158,13 +147,11 @@ class _ShoppingToolbar extends StatelessWidget {
     required this.shopMode,
     required this.onShopModeChanged,
     required this.onOpenFavorites,
-    required this.onOpenReceipts,
   });
 
   final bool shopMode;
   final ValueChanged<bool> onShopModeChanged;
   final VoidCallback onOpenFavorites;
-  final VoidCallback onOpenReceipts;
 
   @override
   Widget build(BuildContext context) {
@@ -185,11 +172,6 @@ class _ShoppingToolbar extends StatelessWidget {
             onPressed: onOpenFavorites,
             icon: const Icon(Icons.star_outline),
             label: const Text('Ulubione'),
-          ),
-          OutlinedButton.icon(
-            onPressed: onOpenReceipts,
-            icon: const Icon(Icons.receipt_long_outlined),
-            label: const Text('Paragony'),
           ),
         ],
       ),
@@ -550,296 +532,6 @@ class _FavoritesSheet extends StatelessWidget {
               ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ReceiptsSheet extends StatelessWidget {
-  const _ReceiptsSheet();
-
-  @override
-  Widget build(BuildContext context) {
-    final appState = AppScope.of(context);
-    final receipts = [...appState.data.activeReceipts]
-      ..sort((a, b) => b.purchasedAt.compareTo(a.purchasedAt));
-    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-
-    return Padding(
-      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 640),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Paragony',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Zamknij',
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FilledButton.icon(
-                onPressed: () => _openReceiptScanSheet(context),
-                icon: const Icon(Icons.document_scanner_outlined),
-                label: const Text('Skanuj / wklej'),
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (receipts.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('Brak zapisanych paragonów'),
-              )
-            else
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: receipts.length,
-                  itemBuilder: (context, index) {
-                    final receipt = receipts[index];
-                    return _ReceiptTile(receipt: receipt);
-                  },
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openReceiptScanSheet(BuildContext context) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => const _ReceiptScanSheet(),
-    );
-  }
-}
-
-class _ReceiptTile extends StatelessWidget {
-  const _ReceiptTile({required this.receipt});
-
-  final Receipt receipt;
-
-  @override
-  Widget build(BuildContext context) {
-    final appState = AppScope.of(context);
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ExpansionTile(
-        leading: const Icon(Icons.receipt_long_outlined),
-        title: Text(receipt.storeName.isEmpty ? 'Paragon' : receipt.storeName),
-        subtitle: Text(
-          '${DateFormat('dd.MM.yyyy, HH:mm').format(receipt.purchasedAt.toLocal())} • '
-          '${receipt.items.length} produktów • ${_formatMoney(receipt.total)}',
-        ),
-        children: [
-          if (receipt.items.isEmpty)
-            const ListTile(title: Text('Brak odczytanych produktów'))
-          else
-            ...receipt.items
-                .take(8)
-                .map(
-                  (item) => ListTile(
-                    dense: true,
-                    title: Text(item.name),
-                    subtitle: Text(
-                      '${formatQuantity(item.quantity)} ${item.unit} • ${_formatMoney(item.price)}',
-                    ),
-                  ),
-                ),
-          if (receipt.items.length > 8)
-            ListTile(
-              dense: true,
-              title: Text('+${receipt.items.length - 8} więcej'),
-            ),
-          OverflowBar(
-            children: [
-              TextButton.icon(
-                onPressed: receipt.items.isEmpty
-                    ? null
-                    : () => appState.addReceiptItemsToShoppingList(receipt),
-                icon: const Icon(Icons.add_shopping_cart),
-                label: const Text('Do listy'),
-              ),
-              TextButton.icon(
-                onPressed: () => appState.deleteReceipt(receipt),
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('Usuń'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ReceiptScanSheet extends StatefulWidget {
-  const _ReceiptScanSheet();
-
-  @override
-  State<_ReceiptScanSheet> createState() => _ReceiptScanSheetState();
-}
-
-class _ReceiptScanSheetState extends State<_ReceiptScanSheet> {
-  final _formKey = GlobalKey<FormState>();
-  final _storeController = TextEditingController(text: 'Sklep');
-  final _rawController = TextEditingController();
-  ParsedReceipt _parsed = const ParsedReceipt(items: [], total: 0);
-
-  @override
-  void initState() {
-    super.initState();
-    _rawController.addListener(_refreshParsed);
-  }
-
-  @override
-  void dispose() {
-    _rawController.removeListener(_refreshParsed);
-    _storeController.dispose();
-    _rawController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
-      child: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Skanuj / wklej paragon',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Zamknij',
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _storeController,
-                decoration: const InputDecoration(
-                  labelText: 'Sklep',
-                  prefixIcon: Icon(Icons.storefront_outlined),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _rawController,
-                minLines: 7,
-                maxLines: 12,
-                decoration: const InputDecoration(
-                  labelText: 'Tekst paragonu',
-                  alignLabelWithHint: true,
-                  prefixIcon: Icon(Icons.receipt_long_outlined),
-                ),
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Wklej tekst paragonu'
-                    : null,
-              ),
-              const SizedBox(height: 12),
-              _ParsedReceiptPreview(parsed: _parsed),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton.icon(
-                  onPressed: _save,
-                  icon: const Icon(Icons.save_outlined),
-                  label: const Text('Zapisz paragon'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-    await AppScope.of(context).addReceipt(
-      storeName: _storeController.text,
-      purchasedAt: DateTime.now(),
-      total: _parsed.total,
-      rawText: _rawController.text,
-      items: _parsed.items,
-    );
-    if (mounted) {
-      Navigator.pop(context);
-    }
-  }
-
-  void _refreshParsed() {
-    setState(() {
-      _parsed = parseReceiptText(_rawController.text);
-    });
-  }
-}
-
-class _ParsedReceiptPreview extends StatelessWidget {
-  const _ParsedReceiptPreview({required this.parsed});
-
-  final ParsedReceipt parsed;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '${parsed.items.length} produktów • ${_formatMoney(parsed.total)}',
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          if (parsed.items.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            ...parsed.items
-                .take(5)
-                .map(
-                  (item) => Text(
-                    '${item.name} • ${formatQuantity(item.quantity)} ${item.unit}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-          ],
-        ],
       ),
     );
   }
@@ -1207,8 +899,4 @@ int _compareCategories(String a, String b) {
   return (first == -1 ? order.length : first).compareTo(
     second == -1 ? order.length : second,
   );
-}
-
-String _formatMoney(double value) {
-  return NumberFormat.currency(locale: 'pl_PL', symbol: 'zł').format(value);
 }
