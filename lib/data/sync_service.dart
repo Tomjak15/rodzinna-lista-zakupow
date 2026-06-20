@@ -149,6 +149,7 @@ class SyncService {
       idOf: (item) => item.id,
       updatedAtOf: (item) => item.updatedAt,
       statusOf: (item) => item.syncStatus,
+      optional: true,
     );
     final pulledCalendarEvents = await _pullList<CalendarEvent>(
       table: 'calendar_events',
@@ -158,6 +159,7 @@ class SyncService {
       idOf: (item) => item.id,
       updatedAtOf: (item) => item.updatedAt,
       statusOf: (item) => item.syncStatus,
+      optional: true,
     );
 
     final currentMember = _refreshCurrentMember(
@@ -332,8 +334,17 @@ class SyncService {
     required String Function(T item) idOf,
     required DateTime Function(T item) updatedAtOf,
     required SyncStatus Function(T item) statusOf,
+    bool optional = false,
   }) async {
-    final rows = await _getList('/api/$table?familyId=$familyId');
+    late final List<Map<String, dynamic>> rows;
+    try {
+      rows = await _getList('/api/$table?familyId=$familyId');
+    } catch (_) {
+      if (optional) {
+        return local;
+      }
+      rethrow;
+    }
     final remoteItems = rows.map(fromRemote).toList();
     final merged = [...local];
 
