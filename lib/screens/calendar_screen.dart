@@ -37,6 +37,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
               icon: Icon(Icons.event_note),
               label: Text('Wydarzenia'),
             ),
+            ButtonSegment(
+              value: 2,
+              icon: Icon(Icons.local_fire_department_outlined),
+              label: Text('Kcal'),
+            ),
           ],
           selected: {_section},
           onSelectionChanged: (value) => setState(() => _section = value.first),
@@ -44,8 +49,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
         const SizedBox(height: 12),
         if (_section == 0)
           _MealCalendar(date: _selectedDate)
+        else if (_section == 1)
+          _EventCalendar(date: _selectedDate)
         else
-          _EventCalendar(date: _selectedDate),
+          _NutritionCalendar(date: _selectedDate),
       ],
     );
   }
@@ -464,6 +471,413 @@ class _MealPlanDraft {
   final Meal meal;
   final List<String> recipeIds;
   final int servings;
+}
+
+class _NutritionCalendar extends StatelessWidget {
+  const _NutritionCalendar({required this.date});
+
+  final DateTime date;
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = AppScope.of(context);
+    final member = appState.data.currentMember;
+    final entries = member == null
+        ? <NutritionEntry>[]
+        : appState
+              .nutritionEntriesForDate(date)
+              .where((entry) => entry.memberId == member.id)
+              .toList();
+    final goal = member == null
+        ? null
+        : appState.nutritionGoalForMember(member.id);
+    final calories = entries.fold<int>(0, (sum, entry) => sum + entry.calories);
+    final protein = entries.fold<double>(
+      0,
+      (sum, entry) => sum + entry.protein,
+    );
+    final calorieGoal = goal?.dailyCalories ?? 0;
+    final proteinGoal = goal?.dailyProtein ?? 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                member == null
+                    ? 'Licznik kcal'
+                    : 'Licznik kcal - ${member.name}',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            IconButton.filledTonal(
+              tooltip: 'Ustaw cel',
+              onPressed: member == null
+                  ? null
+                  : () => _openGoalDialog(context, goal),
+              icon: const Icon(Icons.flag_outlined),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              onPressed: member == null
+                  ? null
+                  : () => _openEntryDialog(context),
+              icon: const Icon(Icons.add),
+              label: const Text('Dodaj'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                _NutritionProgressRow(
+                  icon: Icons.local_fire_department_outlined,
+                  label: 'Kcal',
+                  value: calories.toDouble(),
+                  goal: calorieGoal.toDouble(),
+                  suffix: 'kcal',
+                ),
+                const SizedBox(height: 14),
+                _NutritionProgressRow(
+                  icon: Icons.fitness_center,
+                  label: 'Białko',
+                  value: protein,
+                  goal: proteinGoal,
+                  suffix: 'g',
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (entries.isEmpty)
+          const _CalendarInfo(
+            icon: Icons.local_fire_department_outlined,
+            text: 'Brak wpisów kcal na ten dzień.',
+          )
+        else
+          ...entries.map((entry) => _NutritionEntryTile(entry: entry)),
+      ],
+    );
+  }
+
+  Future<void> _openGoalDialog(
+    BuildContext context,
+    NutritionGoal? goal,
+  ) async {
+    final draft = await showDialog<_NutritionGoalDraft>(
+      context: context,
+      builder: (_) => _NutritionGoalDialog(goal: goal),
+    );
+    if (draft == null || !context.mounted) {
+      return;
+    }
+    await AppScope.of(context).saveNutritionGoal(
+      dailyCalories: draft.dailyCalories,
+      dailyProtein: draft.dailyProtein,
+    );
+  }
+
+  Future<void> _openEntryDialog(BuildContext context) async {
+    final draft = await showDialog<_NutritionEntryDraft>(
+      context: context,
+      builder: (_) => _NutritionEntryDialog(date: date),
+    );
+    if (draft == null || !context.mounted) {
+      return;
+    }
+    await AppScope.of(context).addNutritionEntry(
+      date: date,
+      calories: draft.calories,
+      protein: draft.protein,
+      note: draft.note,
+    );
+  }
+}
+
+class _NutritionProgressRow extends StatelessWidget {
+  const _NutritionProgressRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.goal,
+    required this.suffix,
+  });
+
+  final IconData icon;
+  final String label;
+  final double value;
+  final double goal;
+  final String suffix;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = goal <= 0 ? 0.0 : (value / goal).clamp(0.0, 1.0);
+    final target = goal <= 0 ? 'brak celu' : '${formatQuantity(goal)} $suffix';
+    return Row(
+      children: [
+        Icon(icon),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                  ),
+                  Text('${formatQuantity(value)} / $target'),
+                ],
+              ),
+              const SizedBox(height: 6),
+              LinearProgressIndicator(value: progress),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _NutritionEntryTile extends StatelessWidget {
+  const _NutritionEntryTile({required this.entry});
+
+  final NutritionEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = AppScope.of(context);
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 5),
+      child: ListTile(
+        leading: const Icon(Icons.restaurant_outlined),
+        title: Text(entry.note.isEmpty ? 'Wpis kcal' : entry.note),
+        subtitle: Text(
+          '${entry.calories} kcal - ${formatQuantity(entry.protein)} g białka',
+        ),
+        trailing: Wrap(
+          spacing: 2,
+          children: [
+            _SmallSyncIcon(status: entry.syncStatus),
+            IconButton(
+              tooltip: 'Usuń wpis',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () => appState.deleteNutritionEntry(entry),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NutritionGoalDialog extends StatefulWidget {
+  const _NutritionGoalDialog({required this.goal});
+
+  final NutritionGoal? goal;
+
+  @override
+  State<_NutritionGoalDialog> createState() => _NutritionGoalDialogState();
+}
+
+class _NutritionGoalDialogState extends State<_NutritionGoalDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _caloriesController;
+  late final TextEditingController _proteinController;
+
+  @override
+  void initState() {
+    super.initState();
+    _caloriesController = TextEditingController(
+      text: widget.goal?.dailyCalories.toString() ?? '2200',
+    );
+    _proteinController = TextEditingController(
+      text: widget.goal == null
+          ? '120'
+          : formatQuantity(widget.goal!.dailyProtein),
+    );
+  }
+
+  @override
+  void dispose() {
+    _caloriesController.dispose();
+    _proteinController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Cel dzienny'),
+      content: Form(
+        key: _formKey,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _caloriesController,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Kcal'),
+                validator: (value) =>
+                    _parseInt(value ?? '') <= 0 ? 'Wpisz kcal' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _proteinController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(labelText: 'Białko (g)'),
+                validator: (value) =>
+                    _parseDouble(value ?? '') <= 0 ? 'Wpisz białko' : null,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Anuluj'),
+        ),
+        FilledButton(onPressed: _save, child: const Text('Zapisz')),
+      ],
+    );
+  }
+
+  void _save() {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    Navigator.pop(
+      context,
+      _NutritionGoalDraft(
+        dailyCalories: _parseInt(_caloriesController.text),
+        dailyProtein: _parseDouble(_proteinController.text),
+      ),
+    );
+  }
+}
+
+class _NutritionEntryDialog extends StatefulWidget {
+  const _NutritionEntryDialog({required this.date});
+
+  final DateTime date;
+
+  @override
+  State<_NutritionEntryDialog> createState() => _NutritionEntryDialogState();
+}
+
+class _NutritionEntryDialogState extends State<_NutritionEntryDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _noteController = TextEditingController();
+  final _caloriesController = TextEditingController();
+  final _proteinController = TextEditingController();
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    _caloriesController.dispose();
+    _proteinController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Dodaj kcal'),
+      content: Form(
+        key: _formKey,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: _noteController,
+                  autofocus: true,
+                  decoration: const InputDecoration(labelText: 'Nazwa posiłku'),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _caloriesController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Kcal'),
+                  validator: (value) =>
+                      _parseInt(value ?? '') <= 0 ? 'Wpisz kcal' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _proteinController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(labelText: 'Białko (g)'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Anuluj'),
+        ),
+        FilledButton(onPressed: _save, child: const Text('Dodaj')),
+      ],
+    );
+  }
+
+  void _save() {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    Navigator.pop(
+      context,
+      _NutritionEntryDraft(
+        calories: _parseInt(_caloriesController.text),
+        protein: _parseDouble(_proteinController.text),
+        note: _noteController.text.trim(),
+      ),
+    );
+  }
+}
+
+class _NutritionGoalDraft {
+  const _NutritionGoalDraft({
+    required this.dailyCalories,
+    required this.dailyProtein,
+  });
+
+  final int dailyCalories;
+  final double dailyProtein;
+}
+
+class _NutritionEntryDraft {
+  const _NutritionEntryDraft({
+    required this.calories,
+    required this.protein,
+    required this.note,
+  });
+
+  final int calories;
+  final double protein;
+  final String note;
 }
 
 class _EventCalendar extends StatelessWidget {
@@ -896,4 +1310,12 @@ String _longDayName(DateTime date) {
 
 String _fullDate(DateTime date) {
   return '${_longDayName(date)}, ${DateFormat('dd.MM.yyyy').format(date)}';
+}
+
+int _parseInt(String value) {
+  return int.tryParse(value.replaceAll(RegExp(r'\s+'), '')) ?? 0;
+}
+
+double _parseDouble(String value) {
+  return double.tryParse(value.replaceAll(',', '.')) ?? 0;
 }

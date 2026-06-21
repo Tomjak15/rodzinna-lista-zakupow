@@ -86,6 +86,7 @@ const tables = {
       "meal_id",
       "parent_recipe_id",
       "name",
+      "recipe_category",
       "instructions",
       "base_servings",
       "created_at",
@@ -144,6 +145,38 @@ const tables = {
     ],
     boolColumns: ["is_family_wide", "is_deleted"],
     numberColumns: [],
+  },
+  nutrition_goals: {
+    columns: [
+      "id",
+      "family_id",
+      "member_id",
+      "daily_calories",
+      "daily_protein",
+      "created_at",
+      "updated_at",
+      "created_by",
+      "is_deleted",
+    ],
+    boolColumns: ["is_deleted"],
+    numberColumns: ["daily_calories", "daily_protein"],
+  },
+  nutrition_entries: {
+    columns: [
+      "id",
+      "family_id",
+      "member_id",
+      "entry_date",
+      "calories",
+      "protein",
+      "note",
+      "created_at",
+      "updated_at",
+      "created_by",
+      "is_deleted",
+    ],
+    boolColumns: ["is_deleted"],
+    numberColumns: ["calories", "protein"],
   },
   favorite_products: {
     columns: [
@@ -311,6 +344,7 @@ function initializeDatabase() {
       meal_id text not null references meals(id) on delete cascade,
       parent_recipe_id text references recipes(id) on delete cascade,
       name text not null,
+      recipe_category text not null default 'Tomek',
       instructions text not null default '',
       base_servings integer not null default 4,
       created_at text not null,
@@ -359,6 +393,32 @@ function initializeDatabase() {
       is_deleted integer not null default 0
     );
 
+    create table if not exists nutrition_goals (
+      id text primary key,
+      family_id text not null references families(id) on delete cascade,
+      member_id text not null references members(id) on delete cascade,
+      daily_calories integer not null default 0,
+      daily_protein real not null default 0,
+      created_at text not null,
+      updated_at text not null,
+      created_by text not null,
+      is_deleted integer not null default 0
+    );
+
+    create table if not exists nutrition_entries (
+      id text primary key,
+      family_id text not null references families(id) on delete cascade,
+      member_id text not null references members(id) on delete cascade,
+      entry_date text not null,
+      calories integer not null default 0,
+      protein real not null default 0,
+      note text not null default '',
+      created_at text not null,
+      updated_at text not null,
+      created_by text not null,
+      is_deleted integer not null default 0
+    );
+
     create table if not exists favorite_products (
       id text primary key,
       family_id text not null references families(id) on delete cascade,
@@ -400,11 +460,16 @@ function initializeDatabase() {
     create index if not exists meal_plans_date_idx on meal_plans (date);
     create index if not exists calendar_events_family_id_idx on calendar_events (family_id);
     create index if not exists calendar_events_date_idx on calendar_events (event_date);
+    create index if not exists nutrition_goals_family_id_idx on nutrition_goals (family_id);
+    create index if not exists nutrition_goals_member_id_idx on nutrition_goals (member_id);
+    create index if not exists nutrition_entries_family_id_idx on nutrition_entries (family_id);
+    create index if not exists nutrition_entries_date_idx on nutrition_entries (entry_date);
     create index if not exists favorite_products_family_id_idx on favorite_products (family_id);
     create index if not exists receipts_family_id_idx on receipts (family_id);
     create index if not exists receipts_purchased_at_idx on receipts (purchased_at);
   `);
 
+  ensureColumn("recipes", "recipe_category", "text not null default 'Tomek'");
   ensureColumn("receipts", "image_data", "text");
   ensureColumn("receipts", "image_mime_type", "text");
 }

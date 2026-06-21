@@ -25,6 +25,7 @@ class AppState extends ChangeNotifier {
   AppState({required LocalStore store}) : _store = store;
 
   static const _continuousSyncInterval = Duration(seconds: 8);
+  static const recipeOwnerCategories = ['Anna', 'Kaja', 'Maciej', 'Tomek'];
 
   final LocalStore _store;
   SyncService? _syncService;
@@ -529,6 +530,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> addMealWithRecipe({
     required String mealName,
+    String category = 'Tomek',
     required String instructions,
     required int baseServings,
     required List<IngredientDraft> ingredients,
@@ -557,6 +559,7 @@ class AppState extends ChangeNotifier {
       mealId: mealId,
       parentRecipeId: null,
       name: mealName.trim(),
+      category: _cleanRecipeCategory(category),
       instructions: instructions.trim(),
       baseServings: max(1, baseServings),
       createdAt: now,
@@ -580,6 +583,7 @@ class AppState extends ChangeNotifier {
     required Meal meal,
     required Recipe parentRecipe,
     required String name,
+    String category = 'Tomek',
     required String instructions,
     required int baseServings,
     required List<IngredientDraft> ingredients,
@@ -597,6 +601,7 @@ class AppState extends ChangeNotifier {
       mealId: meal.id,
       parentRecipeId: parentRecipe.id,
       name: name.trim(),
+      category: _cleanRecipeCategory(category),
       instructions: instructions.trim(),
       baseServings: max(1, baseServings),
       createdAt: now,
@@ -618,6 +623,7 @@ class AppState extends ChangeNotifier {
   Future<void> updateRecipe({
     required Recipe recipe,
     required String name,
+    String? category,
     required String instructions,
     required int baseServings,
     required List<IngredientDraft> ingredients,
@@ -628,6 +634,7 @@ class AppState extends ChangeNotifier {
           (entry) => entry.id == recipe.id
               ? entry.copyWith(
                   name: name.trim(),
+                  category: _cleanRecipeCategory(category ?? entry.category),
                   instructions: instructions.trim(),
                   baseServings: max(1, baseServings),
                   updatedAt: now,
@@ -669,6 +676,27 @@ class AppState extends ChangeNotifier {
         ...hiddenOldIngredients,
         ..._ingredientEntities(recipe.id, ingredients, now),
       ],
+    );
+    await _persist(scheduleSync: true);
+  }
+
+  Future<void> updateRecipeCategory({
+    required Recipe recipe,
+    required String category,
+  }) async {
+    final now = DateTime.now().toUtc();
+    _data = _data.copyWith(
+      recipes: _data.recipes
+          .map(
+            (entry) => entry.id == recipe.id
+                ? entry.copyWith(
+                    category: _cleanRecipeCategory(category),
+                    updatedAt: now,
+                    syncStatus: SyncStatus.pending,
+                  )
+                : entry,
+          )
+          .toList(),
     );
     await _persist(scheduleSync: true);
   }
@@ -907,6 +935,103 @@ class AppState extends ChangeNotifier {
     await _persist(scheduleSync: true);
   }
 
+  Future<void> saveNutritionGoal({
+    required int dailyCalories,
+    required double dailyProtein,
+  }) async {
+    final family = _data.family;
+    final member = _data.currentMember;
+    if (family == null || member == null) {
+      return;
+    }
+    final now = DateTime.now().toUtc();
+    final index = _data.nutritionGoals.indexWhere(
+      (goal) => !goal.isDeleted && goal.memberId == member.id,
+    );
+    if (index == -1) {
+      _data = _data.copyWith(
+        nutritionGoals: [
+          ..._data.nutritionGoals,
+          NutritionGoal(
+            id: _uuid.v4(),
+            familyId: family.id,
+            memberId: member.id,
+            dailyCalories: max(0, dailyCalories),
+            dailyProtein: max(0, dailyProtein),
+            createdAt: now,
+            updatedAt: now,
+            createdBy: member.id,
+            isDeleted: false,
+            syncStatus: SyncStatus.pending,
+          ),
+        ],
+      );
+      await _persist(scheduleSync: true);
+      return;
+    }
+
+    final updated = [..._data.nutritionGoals];
+    final current = updated[index];
+    updated[index] = current.copyWith(
+      dailyCalories: max(0, dailyCalories),
+      dailyProtein: max(0, dailyProtein),
+      updatedAt: now,
+      syncStatus: SyncStatus.pending,
+    );
+    _data = _data.copyWith(nutritionGoals: updated);
+    await _persist(scheduleSync: true);
+  }
+
+  Future<void> addNutritionEntry({
+    required DateTime date,
+    required int calories,
+    required double protein,
+    required String note,
+  }) async {
+    final family = _data.family;
+    final member = _data.currentMember;
+    if (family == null || member == null || (calories <= 0 && protein <= 0)) {
+      return;
+    }
+    final now = DateTime.now().toUtc();
+    final entry = NutritionEntry(
+      id: _uuid.v4(),
+      familyId: family.id,
+      memberId: member.id,
+      date: _dateOnlyUtc(date),
+      calories: max(0, calories),
+      protein: max(0, protein),
+      note: note.trim(),
+      createdAt: now,
+      updatedAt: now,
+      createdBy: member.id,
+      isDeleted: false,
+      syncStatus: SyncStatus.pending,
+    );
+    _data = _data.copyWith(
+      nutritionEntries: [..._data.nutritionEntries, entry],
+    );
+    await _persist(scheduleSync: true);
+  }
+
+  Future<void> deleteNutritionEntry(NutritionEntry entry) async {
+    final now = DateTime.now().toUtc();
+    _data = _data.copyWith(
+      nutritionEntries: _data.nutritionEntries
+          .map(
+            (item) => item.id == entry.id
+                ? item.copyWith(
+                    isDeleted: true,
+                    updatedAt: now,
+                    syncStatus: SyncStatus.pending,
+                  )
+                : item,
+          )
+          .toList(),
+    );
+    await _persist(scheduleSync: true);
+  }
+
   Recipe? mainRecipeFor(Meal meal) {
     for (final recipe in _data.activeRecipes) {
       if (recipe.mealId == meal.id && recipe.parentRecipeId == null) {
@@ -944,6 +1069,23 @@ class AppState extends ChangeNotifier {
         .where((event) => _isSameUtcDate(event.date, cleanDate))
         .toList()
       ..sort((a, b) => a.title.compareTo(b.title));
+  }
+
+  List<NutritionEntry> nutritionEntriesForDate(DateTime date) {
+    final cleanDate = _dateOnlyUtc(date);
+    return _data.activeNutritionEntries
+        .where((entry) => _isSameUtcDate(entry.date, cleanDate))
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+  }
+
+  NutritionGoal? nutritionGoalForMember(String memberId) {
+    for (final goal in _data.activeNutritionGoals) {
+      if (goal.memberId == memberId) {
+        return goal;
+      }
+    }
+    return null;
   }
 
   Meal? mealById(String id) {
@@ -1113,11 +1255,35 @@ class AppState extends ChangeNotifier {
               : entry,
         )
         .toList();
+    final updatedNutritionGoals = data.nutritionGoals
+        .map(
+          (entry) => entry.memberId == memberId && !entry.isDeleted
+              ? entry.copyWith(
+                  isDeleted: true,
+                  updatedAt: now,
+                  syncStatus: SyncStatus.pending,
+                )
+              : entry,
+        )
+        .toList();
+    final updatedNutritionEntries = data.nutritionEntries
+        .map(
+          (entry) => entry.memberId == memberId && !entry.isDeleted
+              ? entry.copyWith(
+                  isDeleted: true,
+                  updatedAt: now,
+                  syncStatus: SyncStatus.pending,
+                )
+              : entry,
+        )
+        .toList();
 
     return data.copyWith(
       currentMember: updatedCurrentMember,
       members: updatedMembers,
       calendarEvents: updatedEvents,
+      nutritionGoals: updatedNutritionGoals,
+      nutritionEntries: updatedNutritionEntries,
     );
   }
 
@@ -1246,6 +1412,14 @@ class AppState extends ChangeNotifier {
   String _generateFamilyCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     return List.generate(6, (_) => chars[_random.nextInt(chars.length)]).join();
+  }
+
+  String _cleanRecipeCategory(String category) {
+    final clean = category.trim();
+    if (recipeOwnerCategories.contains(clean)) {
+      return clean;
+    }
+    return recipeOwnerCategories.last;
   }
 
   DateTime _dateOnlyUtc(DateTime date) {

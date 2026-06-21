@@ -85,6 +85,24 @@ class SyncService {
       withStatus: (item, status) => item.copyWith(syncStatus: status),
       familyIdOf: (item) => item.familyId,
     );
+    final nutritionGoals = await _pushList<NutritionGoal>(
+      table: 'nutrition_goals',
+      familyId: familyId,
+      local: next.nutritionGoals,
+      toRemote: (item) => item.toRemote(),
+      statusOf: (item) => item.syncStatus,
+      withStatus: (item, status) => item.copyWith(syncStatus: status),
+      familyIdOf: (item) => item.familyId,
+    );
+    final nutritionEntries = await _pushList<NutritionEntry>(
+      table: 'nutrition_entries',
+      familyId: familyId,
+      local: next.nutritionEntries,
+      toRemote: (item) => item.toRemote(),
+      statusOf: (item) => item.syncStatus,
+      withStatus: (item, status) => item.copyWith(syncStatus: status),
+      familyIdOf: (item) => item.familyId,
+    );
     final favoriteProducts = await _pushList<FavoriteProduct>(
       table: 'favorite_products',
       familyId: familyId,
@@ -112,6 +130,8 @@ class SyncService {
       recipeIngredients: recipeIngredients,
       mealPlans: mealPlans,
       calendarEvents: calendarEvents,
+      nutritionGoals: nutritionGoals,
+      nutritionEntries: nutritionEntries,
       favoriteProducts: favoriteProducts,
       receipts: receipts,
     );
@@ -181,6 +201,26 @@ class SyncService {
       statusOf: (item) => item.syncStatus,
       optional: true,
     );
+    final pulledNutritionGoals = await _pullList<NutritionGoal>(
+      table: 'nutrition_goals',
+      familyId: familyId,
+      local: next.nutritionGoals,
+      fromRemote: NutritionGoal.fromRemote,
+      idOf: (item) => item.id,
+      updatedAtOf: (item) => item.updatedAt,
+      statusOf: (item) => item.syncStatus,
+      optional: true,
+    );
+    final pulledNutritionEntries = await _pullList<NutritionEntry>(
+      table: 'nutrition_entries',
+      familyId: familyId,
+      local: next.nutritionEntries,
+      fromRemote: NutritionEntry.fromRemote,
+      idOf: (item) => item.id,
+      updatedAtOf: (item) => item.updatedAt,
+      statusOf: (item) => item.syncStatus,
+      optional: true,
+    );
     final pulledFavoriteProducts = await _pullList<FavoriteProduct>(
       table: 'favorite_products',
       familyId: familyId,
@@ -216,6 +256,8 @@ class SyncService {
       recipeIngredients: pulledRecipeIngredients,
       mealPlans: pulledMealPlans,
       calendarEvents: pulledCalendarEvents,
+      nutritionGoals: pulledNutritionGoals,
+      nutritionEntries: pulledNutritionEntries,
       favoriteProducts: pulledFavoriteProducts,
       receipts: pulledReceipts,
     );
@@ -322,6 +364,22 @@ class SyncService {
           )
           .toList(),
       calendarEvents: data.calendarEvents
+          .map(
+            (item) => item.copyWith(
+              familyId: familyId,
+              syncStatus: SyncStatus.pending,
+            ),
+          )
+          .toList(),
+      nutritionGoals: data.nutritionGoals
+          .map(
+            (item) => item.copyWith(
+              familyId: familyId,
+              syncStatus: SyncStatus.pending,
+            ),
+          )
+          .toList(),
+      nutritionEntries: data.nutritionEntries
           .map(
             (item) => item.copyWith(
               familyId: familyId,

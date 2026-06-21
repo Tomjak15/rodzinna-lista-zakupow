@@ -102,6 +102,8 @@ class AppData {
     required this.recipeIngredients,
     required this.mealPlans,
     required this.calendarEvents,
+    required this.nutritionGoals,
+    required this.nutritionEntries,
     required this.favoriteProducts,
     required this.receipts,
   });
@@ -117,6 +119,8 @@ class AppData {
       recipeIngredients: [],
       mealPlans: [],
       calendarEvents: [],
+      nutritionGoals: [],
+      nutritionEntries: [],
       favoriteProducts: [],
       receipts: [],
     );
@@ -131,6 +135,8 @@ class AppData {
   final List<RecipeIngredient> recipeIngredients;
   final List<MealPlan> mealPlans;
   final List<CalendarEvent> calendarEvents;
+  final List<NutritionGoal> nutritionGoals;
+  final List<NutritionEntry> nutritionEntries;
   final List<FavoriteProduct> favoriteProducts;
   final List<Receipt> receipts;
 
@@ -153,6 +159,12 @@ class AppData {
 
   List<CalendarEvent> get activeCalendarEvents =>
       calendarEvents.where((event) => !event.isDeleted).toList();
+
+  List<NutritionGoal> get activeNutritionGoals =>
+      nutritionGoals.where((goal) => !goal.isDeleted).toList();
+
+  List<NutritionEntry> get activeNutritionEntries =>
+      nutritionEntries.where((entry) => !entry.isDeleted).toList();
 
   List<FavoriteProduct> get activeFavoriteProducts =>
       favoriteProducts.where((product) => !product.isDeleted).toList();
@@ -184,6 +196,12 @@ class AppData {
     count += calendarEvents
         .where((item) => item.syncStatus != SyncStatus.synced)
         .length;
+    count += nutritionGoals
+        .where((item) => item.syncStatus != SyncStatus.synced)
+        .length;
+    count += nutritionEntries
+        .where((item) => item.syncStatus != SyncStatus.synced)
+        .length;
     count += favoriteProducts
         .where((item) => item.syncStatus != SyncStatus.synced)
         .length;
@@ -203,6 +221,8 @@ class AppData {
     List<RecipeIngredient>? recipeIngredients,
     List<MealPlan>? mealPlans,
     List<CalendarEvent>? calendarEvents,
+    List<NutritionGoal>? nutritionGoals,
+    List<NutritionEntry>? nutritionEntries,
     List<FavoriteProduct>? favoriteProducts,
     List<Receipt>? receipts,
     bool clearFamily = false,
@@ -218,6 +238,8 @@ class AppData {
       recipeIngredients: recipeIngredients ?? this.recipeIngredients,
       mealPlans: mealPlans ?? this.mealPlans,
       calendarEvents: calendarEvents ?? this.calendarEvents,
+      nutritionGoals: nutritionGoals ?? this.nutritionGoals,
+      nutritionEntries: nutritionEntries ?? this.nutritionEntries,
       favoriteProducts: favoriteProducts ?? this.favoriteProducts,
       receipts: receipts ?? this.receipts,
     );
@@ -693,6 +715,7 @@ class Recipe {
     required this.mealId,
     required this.parentRecipeId,
     required this.name,
+    required this.category,
     required this.instructions,
     required this.baseServings,
     required this.createdAt,
@@ -711,6 +734,10 @@ class Recipe {
         json['parentRecipeId'] ?? json['parent_recipe_id'],
       ),
       name: json['name']?.toString() ?? '',
+      category:
+          json['category']?.toString() ??
+          json['recipe_category']?.toString() ??
+          'Tomek',
       instructions: json['instructions']?.toString() ?? '',
       baseServings: intFromJson(json['baseServings'] ?? json['base_servings']),
       createdAt: dateFromJson(json['createdAt'] ?? json['created_at']),
@@ -729,6 +756,7 @@ class Recipe {
       mealId: json['meal_id'].toString(),
       parentRecipeId: nullableString(json['parent_recipe_id']),
       name: json['name']?.toString() ?? '',
+      category: json['recipe_category']?.toString() ?? 'Tomek',
       instructions: json['instructions']?.toString() ?? '',
       baseServings: intFromJson(json['base_servings']),
       createdAt: dateFromJson(json['created_at']),
@@ -744,6 +772,7 @@ class Recipe {
   final String mealId;
   final String? parentRecipeId;
   final String name;
+  final String category;
   final String instructions;
   final int baseServings;
   final DateTime createdAt;
@@ -761,6 +790,7 @@ class Recipe {
       'mealId': mealId,
       'parentRecipeId': parentRecipeId,
       'name': name,
+      'category': category,
       'instructions': instructions,
       'baseServings': baseServings,
       'createdAt': createdAt.toIso8601String(),
@@ -778,6 +808,7 @@ class Recipe {
       'meal_id': mealId,
       'parent_recipe_id': parentRecipeId,
       'name': name,
+      'recipe_category': category,
       'instructions': instructions,
       'base_servings': baseServings,
       'created_at': createdAt.toIso8601String(),
@@ -793,6 +824,7 @@ class Recipe {
     String? mealId,
     String? parentRecipeId,
     String? name,
+    String? category,
     String? instructions,
     int? baseServings,
     DateTime? createdAt,
@@ -807,6 +839,7 @@ class Recipe {
       mealId: mealId ?? this.mealId,
       parentRecipeId: parentRecipeId ?? this.parentRecipeId,
       name: name ?? this.name,
+      category: category ?? this.category,
       instructions: instructions ?? this.instructions,
       baseServings: baseServings ?? this.baseServings,
       createdAt: createdAt ?? this.createdAt,
@@ -1180,6 +1213,250 @@ class CalendarEvent {
       notes: notes ?? this.notes,
       memberId: clearMemberId ? null : memberId ?? this.memberId,
       isFamilyWide: isFamilyWide ?? this.isFamilyWide,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      createdBy: createdBy ?? this.createdBy,
+      isDeleted: isDeleted ?? this.isDeleted,
+      syncStatus: syncStatus ?? this.syncStatus,
+    );
+  }
+}
+
+class NutritionGoal {
+  const NutritionGoal({
+    required this.id,
+    required this.familyId,
+    required this.memberId,
+    required this.dailyCalories,
+    required this.dailyProtein,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.createdBy,
+    required this.isDeleted,
+    required this.syncStatus,
+  });
+
+  factory NutritionGoal.fromJson(Map<String, dynamic> json) {
+    return NutritionGoal(
+      id: json['id'].toString(),
+      familyId: (json['familyId'] ?? json['family_id']).toString(),
+      memberId: (json['memberId'] ?? json['member_id']).toString(),
+      dailyCalories: intFromJson(
+        json['dailyCalories'] ?? json['daily_calories'],
+      ),
+      dailyProtein: doubleFromJson(
+        json['dailyProtein'] ?? json['daily_protein'],
+      ),
+      createdAt: dateFromJson(json['createdAt'] ?? json['created_at']),
+      updatedAt: dateFromJson(json['updatedAt'] ?? json['updated_at']),
+      createdBy:
+          json['createdBy']?.toString() ?? json['created_by']?.toString() ?? '',
+      isDeleted: boolFromJson(json['isDeleted'] ?? json['is_deleted']),
+      syncStatus: syncStatusFromJson(json['syncStatus']),
+    );
+  }
+
+  factory NutritionGoal.fromRemote(Map<String, dynamic> json) {
+    return NutritionGoal(
+      id: json['id'].toString(),
+      familyId: json['family_id'].toString(),
+      memberId: json['member_id'].toString(),
+      dailyCalories: intFromJson(json['daily_calories']),
+      dailyProtein: doubleFromJson(json['daily_protein']),
+      createdAt: dateFromJson(json['created_at']),
+      updatedAt: dateFromJson(json['updated_at']),
+      createdBy: json['created_by']?.toString() ?? '',
+      isDeleted: boolFromJson(json['is_deleted'] ?? json['deleted']),
+      syncStatus: SyncStatus.synced,
+    );
+  }
+
+  final String id;
+  final String familyId;
+  final String memberId;
+  final int dailyCalories;
+  final double dailyProtein;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String createdBy;
+  final bool isDeleted;
+  final SyncStatus syncStatus;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'familyId': familyId,
+      'memberId': memberId,
+      'dailyCalories': dailyCalories,
+      'dailyProtein': dailyProtein,
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+      'createdBy': createdBy,
+      'isDeleted': isDeleted,
+      'syncStatus': syncStatus.name,
+    };
+  }
+
+  Map<String, dynamic> toRemote() {
+    return {
+      'id': id,
+      'family_id': familyId,
+      'member_id': memberId,
+      'daily_calories': dailyCalories,
+      'daily_protein': dailyProtein,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+      'created_by': createdBy,
+      'is_deleted': isDeleted,
+    };
+  }
+
+  NutritionGoal copyWith({
+    String? id,
+    String? familyId,
+    String? memberId,
+    int? dailyCalories,
+    double? dailyProtein,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? createdBy,
+    bool? isDeleted,
+    SyncStatus? syncStatus,
+  }) {
+    return NutritionGoal(
+      id: id ?? this.id,
+      familyId: familyId ?? this.familyId,
+      memberId: memberId ?? this.memberId,
+      dailyCalories: dailyCalories ?? this.dailyCalories,
+      dailyProtein: dailyProtein ?? this.dailyProtein,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      createdBy: createdBy ?? this.createdBy,
+      isDeleted: isDeleted ?? this.isDeleted,
+      syncStatus: syncStatus ?? this.syncStatus,
+    );
+  }
+}
+
+class NutritionEntry {
+  const NutritionEntry({
+    required this.id,
+    required this.familyId,
+    required this.memberId,
+    required this.date,
+    required this.calories,
+    required this.protein,
+    required this.note,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.createdBy,
+    required this.isDeleted,
+    required this.syncStatus,
+  });
+
+  factory NutritionEntry.fromJson(Map<String, dynamic> json) {
+    return NutritionEntry(
+      id: json['id'].toString(),
+      familyId: (json['familyId'] ?? json['family_id']).toString(),
+      memberId: (json['memberId'] ?? json['member_id']).toString(),
+      date: dateFromJson(json['date'] ?? json['entry_date']),
+      calories: intFromJson(json['calories']),
+      protein: doubleFromJson(json['protein']),
+      note: json['note']?.toString() ?? '',
+      createdAt: dateFromJson(json['createdAt'] ?? json['created_at']),
+      updatedAt: dateFromJson(json['updatedAt'] ?? json['updated_at']),
+      createdBy:
+          json['createdBy']?.toString() ?? json['created_by']?.toString() ?? '',
+      isDeleted: boolFromJson(json['isDeleted'] ?? json['is_deleted']),
+      syncStatus: syncStatusFromJson(json['syncStatus']),
+    );
+  }
+
+  factory NutritionEntry.fromRemote(Map<String, dynamic> json) {
+    return NutritionEntry(
+      id: json['id'].toString(),
+      familyId: json['family_id'].toString(),
+      memberId: json['member_id'].toString(),
+      date: dateFromJson(json['entry_date']),
+      calories: intFromJson(json['calories']),
+      protein: doubleFromJson(json['protein']),
+      note: json['note']?.toString() ?? '',
+      createdAt: dateFromJson(json['created_at']),
+      updatedAt: dateFromJson(json['updated_at']),
+      createdBy: json['created_by']?.toString() ?? '',
+      isDeleted: boolFromJson(json['is_deleted'] ?? json['deleted']),
+      syncStatus: SyncStatus.synced,
+    );
+  }
+
+  final String id;
+  final String familyId;
+  final String memberId;
+  final DateTime date;
+  final int calories;
+  final double protein;
+  final String note;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String createdBy;
+  final bool isDeleted;
+  final SyncStatus syncStatus;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'familyId': familyId,
+      'memberId': memberId,
+      'date': date.toIso8601String(),
+      'calories': calories,
+      'protein': protein,
+      'note': note,
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+      'createdBy': createdBy,
+      'isDeleted': isDeleted,
+      'syncStatus': syncStatus.name,
+    };
+  }
+
+  Map<String, dynamic> toRemote() {
+    return {
+      'id': id,
+      'family_id': familyId,
+      'member_id': memberId,
+      'entry_date': date.toIso8601String(),
+      'calories': calories,
+      'protein': protein,
+      'note': note,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+      'created_by': createdBy,
+      'is_deleted': isDeleted,
+    };
+  }
+
+  NutritionEntry copyWith({
+    String? id,
+    String? familyId,
+    String? memberId,
+    DateTime? date,
+    int? calories,
+    double? protein,
+    String? note,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? createdBy,
+    bool? isDeleted,
+    SyncStatus? syncStatus,
+  }) {
+    return NutritionEntry(
+      id: id ?? this.id,
+      familyId: familyId ?? this.familyId,
+      memberId: memberId ?? this.memberId,
+      date: date ?? this.date,
+      calories: calories ?? this.calories,
+      protein: protein ?? this.protein,
+      note: note ?? this.note,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       createdBy: createdBy ?? this.createdBy,

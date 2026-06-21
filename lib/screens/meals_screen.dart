@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../app/app_scope.dart';
+import '../app/app_state.dart';
 import '../models/entities.dart';
 import '../models/ingredient_draft.dart';
 
@@ -26,7 +27,7 @@ class _MealsScreenState extends State<MealsScreen> {
         : allMeals
               .where(
                 (meal) =>
-                    _categoryForRecipeName(meal.name) == _selectedCategory,
+                    appState.mainRecipeFor(meal)?.category == _selectedCategory,
               )
               .toList();
 
@@ -104,9 +105,9 @@ class _MealTile extends StatelessWidget {
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
         subtitle: mainRecipe == null
-            ? const Text('Brak przepisu głównego')
+            ? const Text('Brak przepisu gĹ‚Ăłwnego')
             : Text(
-                '${mainRecipe.baseServings} porcje bazowe • ${subRecipes.length} dodatków',
+                '${mainRecipe.category} - ${mainRecipe.baseServings} porcje bazowe - ${subRecipes.length} dodatków',
               ),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
@@ -124,7 +125,7 @@ class _MealTile extends StatelessWidget {
                     subRecipes: subRecipes,
                   ),
                   icon: const Icon(Icons.playlist_add),
-                  label: const Text('Dodaj do listy zakupów'),
+                  label: const Text('Dodaj do listy zakupĂłw'),
                 ),
                 OutlinedButton.icon(
                   onPressed: () =>
@@ -133,7 +134,7 @@ class _MealTile extends StatelessWidget {
                   label: const Text('Edytuj przepis'),
                 ),
                 IconButton(
-                  tooltip: 'Usuń obiad',
+                  tooltip: 'UsuĹ„ obiad',
                   onPressed: () => _confirmDeleteMeal(context, meal),
                   icon: const Icon(Icons.delete_outline),
                 ),
@@ -151,7 +152,7 @@ class _MealTile extends StatelessWidget {
             if (subRecipes.isEmpty)
               const Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Brak dodatków'),
+                child: Text('Brak dodatkĂłw'),
               )
             else
               ...subRecipes.map((recipe) => _SubRecipeRow(recipe: recipe)),
@@ -200,8 +201,27 @@ class _RecipeDetails extends StatelessWidget {
           ],
         ),
         Text(
-          'Autor: ${appState.memberById(recipe.createdBy)?.name ?? 'Rodzina'}',
+          'Autor: ${appState.memberById(recipe.createdBy)?.name ?? 'Rodzina'} - ${recipe.category}',
           style: Theme.of(context).textTheme.labelMedium,
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: AppState.recipeOwnerCategories
+              .map(
+                (category) => ChoiceChip(
+                  selected: recipe.category == category,
+                  label: Text(category),
+                  onSelected: recipe.category == category
+                      ? null
+                      : (_) => appState.updateRecipeCategory(
+                          recipe: recipe,
+                          category: category,
+                        ),
+                ),
+              )
+              .toList(),
         ),
         if (recipe.instructions.isNotEmpty) ...[
           const SizedBox(height: 6),
@@ -240,7 +260,7 @@ class _SubRecipeRow extends StatelessWidget {
       leading: const Icon(Icons.rice_bowl_outlined),
       title: Text(recipe.name),
       subtitle: Text(
-        '${recipe.baseServings} porcje bazowe • $ingredientCount składników',
+        '${recipe.category} - ${recipe.baseServings} porcje bazowe - $ingredientCount składników',
       ),
       trailing: Wrap(
         spacing: 2,
@@ -252,7 +272,7 @@ class _SubRecipeRow extends StatelessWidget {
             icon: const Icon(Icons.edit_outlined),
           ),
           IconButton(
-            tooltip: 'Usuń',
+            tooltip: 'UsuĹ„',
             onPressed: () => appState.deleteRecipe(recipe),
             icon: const Icon(Icons.delete_outline),
           ),
@@ -274,8 +294,8 @@ class _SyncDot extends StatelessWidget {
     }
     return Tooltip(
       message: status == SyncStatus.failed
-          ? 'Nie udało się zsynchronizować'
-          : 'Oczekuje na synchronizację',
+          ? 'Nie udaĹ‚o siÄ™ zsynchronizowaÄ‡'
+          : 'Oczekuje na synchronizacjÄ™',
       child: Icon(
         status == SyncStatus.failed
             ? Icons.cloud_off_outlined
@@ -307,7 +327,7 @@ class _EmptyMeals extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'Nie ma jeszcze obiadów',
+              'Nie ma jeszcze obiadĂłw',
               style: Theme.of(context).textTheme.titleLarge,
             ),
           ],
@@ -320,12 +340,14 @@ class _EmptyMeals extends StatelessWidget {
 class _RecipeDraft {
   const _RecipeDraft({
     required this.name,
+    required this.category,
     required this.instructions,
     required this.baseServings,
     required this.ingredients,
   });
 
   final String name;
+  final String category;
   final String instructions;
   final int baseServings;
   final List<IngredientDraft> ingredients;
@@ -349,6 +371,7 @@ class _RecipeDialog extends StatefulWidget {
 class _RecipeDialogState extends State<_RecipeDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
+  late String _category;
   late final TextEditingController _instructionsController;
   late final TextEditingController _servingsController;
   late final List<_IngredientLineController> _ingredientLines;
@@ -358,6 +381,9 @@ class _RecipeDialogState extends State<_RecipeDialog> {
     super.initState();
     final recipe = widget.recipe;
     _nameController = TextEditingController(text: recipe?.name ?? '');
+    _category = AppState.recipeOwnerCategories.contains(recipe?.category)
+        ? recipe!.category
+        : AppState.recipeOwnerCategories.last;
     _instructionsController = TextEditingController(
       text: recipe?.instructions ?? '',
     );
@@ -401,8 +427,23 @@ class _RecipeDialogState extends State<_RecipeDialog> {
                   textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(labelText: 'Nazwa'),
                   validator: (value) => value == null || value.trim().isEmpty
-                      ? 'Wpisz nazwę'
+                      ? 'Wpisz nazwÄ™'
                       : null,
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: _category,
+                  decoration: const InputDecoration(labelText: 'Kategoria'),
+                  items: AppState.recipeOwnerCategories
+                      .map(
+                        (category) => DropdownMenuItem(
+                          value: category,
+                          child: Text(category),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) =>
+                      setState(() => _category = value ?? _category),
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
@@ -413,7 +454,7 @@ class _RecipeDialogState extends State<_RecipeDialog> {
                   ),
                   validator: (value) {
                     final parsed = int.tryParse(value ?? '') ?? 0;
-                    return parsed <= 0 ? 'Podaj liczbę porcji' : null;
+                    return parsed <= 0 ? 'Podaj liczbÄ™ porcji' : null;
                   },
                 ),
                 const SizedBox(height: 12),
@@ -429,7 +470,7 @@ class _RecipeDialogState extends State<_RecipeDialog> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Składniki',
+                    'SkĹ‚adniki',
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                 ),
@@ -448,7 +489,7 @@ class _RecipeDialogState extends State<_RecipeDialog> {
                   child: OutlinedButton.icon(
                     onPressed: _addIngredientLine,
                     icon: const Icon(Icons.add),
-                    label: const Text('Dodaj składnik'),
+                    label: const Text('Dodaj skĹ‚adnik'),
                   ),
                 ),
               ],
@@ -481,6 +522,7 @@ class _RecipeDialogState extends State<_RecipeDialog> {
       context,
       _RecipeDraft(
         name: _nameController.text.trim(),
+        category: _category,
         instructions: _instructionsController.text.trim(),
         baseServings: max(1, int.tryParse(_servingsController.text) ?? 1),
         ingredients: ingredients,
@@ -566,10 +608,11 @@ class _IngredientLineEditor extends StatelessWidget {
         children: [
           TextFormField(
             controller: line.nameController,
-            decoration: const InputDecoration(labelText: 'Składnik'),
+            decoration: const InputDecoration(labelText: 'SkĹ‚adnik'),
             textInputAction: TextInputAction.next,
-            validator: (value) =>
-                value == null || value.trim().isEmpty ? 'Wpisz składnik' : null,
+            validator: (value) => value == null || value.trim().isEmpty
+                ? 'Wpisz skĹ‚adnik'
+                : null,
           ),
           const SizedBox(height: 8),
           Row(
@@ -580,12 +623,12 @@ class _IngredientLineEditor extends StatelessWidget {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(labelText: 'Ilość'),
+                  decoration: const InputDecoration(labelText: 'IloĹ›Ä‡'),
                   validator: (value) {
                     final parsed =
                         double.tryParse((value ?? '').replaceAll(',', '.')) ??
                         0;
-                    return parsed <= 0 ? 'Podaj ilość' : null;
+                    return parsed <= 0 ? 'Podaj iloĹ›Ä‡' : null;
                   },
                 ),
               ),
@@ -598,7 +641,7 @@ class _IngredientLineEditor extends StatelessWidget {
               ),
               const SizedBox(width: 4),
               IconButton(
-                tooltip: 'Usuń składnik',
+                tooltip: 'UsuĹ„ skĹ‚adnik',
                 onPressed: canRemove ? onRemove : null,
                 icon: const Icon(Icons.delete_outline),
               ),
@@ -647,7 +690,7 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Dodaj do listy zakupów'),
+      title: const Text('Dodaj do listy zakupĂłw'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 460),
         child: SingleChildScrollView(
@@ -676,7 +719,7 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
                           });
                         },
                         icon: const Icon(Icons.restaurant_outlined),
-                        label: const Text('Tylko główny'),
+                        label: const Text('Tylko gĹ‚Ăłwny'),
                       ),
                       FilledButton.tonalIcon(
                         onPressed: () {
@@ -691,7 +734,7 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
                           });
                         },
                         icon: const Icon(Icons.done_all),
-                        label: const Text('Cały obiad'),
+                        label: const Text('CaĹ‚y obiad'),
                       ),
                     ],
                   ),
@@ -706,7 +749,7 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
                   _selectionError = null;
                 }),
                 title: Text(widget.mainRecipe.name),
-                subtitle: const Text('Przepis główny'),
+                subtitle: const Text('Przepis gĹ‚Ăłwny'),
               ),
               const Divider(),
               Align(
@@ -720,7 +763,7 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
               if (widget.subRecipes.isEmpty)
                 const Align(
                   alignment: Alignment.centerLeft,
-                  child: Text('Brak dodatków'),
+                  child: Text('Brak dodatkĂłw'),
                 )
               else
                 ...widget.subRecipes.map(
@@ -790,6 +833,7 @@ Future<void> _openMealDialog(BuildContext context) async {
   }
   await AppScope.of(context).addMealWithRecipe(
     mealName: draft.name,
+    category: draft.category,
     instructions: draft.instructions,
     baseServings: draft.baseServings,
     ingredients: draft.ingredients,
@@ -824,6 +868,7 @@ Future<void> _openRecipeDialog(
   await AppScope.of(context).updateRecipe(
     recipe: recipe,
     name: draft.name,
+    category: draft.category,
     instructions: draft.instructions,
     baseServings: draft.baseServings,
     ingredients: draft.ingredients,
@@ -846,6 +891,7 @@ Future<void> _openSubRecipeDialog(
     meal: meal,
     parentRecipe: parentRecipe,
     name: draft.name,
+    category: draft.category,
     instructions: draft.instructions,
     baseServings: draft.baseServings,
     ingredients: draft.ingredients,
@@ -871,7 +917,7 @@ Future<void> _openAddToShoppingDialog(
   );
   if (context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Składniki dodane do listy zakupów')),
+      const SnackBar(content: Text('SkĹ‚adniki dodane do listy zakupĂłw')),
     );
   }
 }
@@ -880,8 +926,8 @@ Future<void> _confirmDeleteMeal(BuildContext context, Meal meal) async {
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Usunąć obiad?'),
-      content: Text('Obiad „${meal.name}” zostanie ukryty z listy.'),
+      title: const Text('UsunÄ…Ä‡ obiad?'),
+      content: Text('Obiad â€ž${meal.name}â€ť zostanie ukryty z listy.'),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
@@ -889,7 +935,7 @@ Future<void> _confirmDeleteMeal(BuildContext context, Meal meal) async {
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, true),
-          child: const Text('Usuń'),
+          child: const Text('UsuĹ„'),
         ),
       ],
     ),
@@ -899,32 +945,4 @@ Future<void> _confirmDeleteMeal(BuildContext context, Meal meal) async {
   }
 }
 
-const recipeCategoryNames = [
-  'Wszystkie',
-  'Obiady',
-  'Śniadania',
-  'Fit',
-  'Desery',
-  'Gotowce',
-];
-
-String _categoryForRecipeName(String name) {
-  final lower = name.toLowerCase();
-  if (_containsAny(lower, ['owsianka', 'jajecznica', 'kanap', 'tost'])) {
-    return 'Śniadania';
-  }
-  if (_containsAny(lower, ['fit', 'protein', 'białk', 'salat', 'sałat'])) {
-    return 'Fit';
-  }
-  if (_containsAny(lower, ['ciasto', 'deser', 'lody', 'muffin', 'naleś'])) {
-    return 'Desery';
-  }
-  if (_containsAny(lower, ['mroż', 'gotow', 'pierogi', 'pizza', 'frytki'])) {
-    return 'Gotowce';
-  }
-  return 'Obiady';
-}
-
-bool _containsAny(String value, List<String> needles) {
-  return needles.any(value.contains);
-}
+const recipeCategoryNames = ['Wszystkie', ...AppState.recipeOwnerCategories];
