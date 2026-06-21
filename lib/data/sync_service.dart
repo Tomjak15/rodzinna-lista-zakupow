@@ -103,6 +103,15 @@ class SyncService {
       withStatus: (item, status) => item.copyWith(syncStatus: status),
       familyIdOf: (item) => item.familyId,
     );
+    final trainingEntries = await _pushList<TrainingEntry>(
+      table: 'training_entries',
+      familyId: familyId,
+      local: next.trainingEntries,
+      toRemote: (item) => item.toRemote(),
+      statusOf: (item) => item.syncStatus,
+      withStatus: (item, status) => item.copyWith(syncStatus: status),
+      familyIdOf: (item) => item.familyId,
+    );
     final favoriteProducts = await _pushList<FavoriteProduct>(
       table: 'favorite_products',
       familyId: familyId,
@@ -132,6 +141,7 @@ class SyncService {
       calendarEvents: calendarEvents,
       nutritionGoals: nutritionGoals,
       nutritionEntries: nutritionEntries,
+      trainingEntries: trainingEntries,
       favoriteProducts: favoriteProducts,
       receipts: receipts,
     );
@@ -221,6 +231,16 @@ class SyncService {
       statusOf: (item) => item.syncStatus,
       optional: true,
     );
+    final pulledTrainingEntries = await _pullList<TrainingEntry>(
+      table: 'training_entries',
+      familyId: familyId,
+      local: next.trainingEntries,
+      fromRemote: TrainingEntry.fromRemote,
+      idOf: (item) => item.id,
+      updatedAtOf: (item) => item.updatedAt,
+      statusOf: (item) => item.syncStatus,
+      optional: true,
+    );
     final pulledFavoriteProducts = await _pullList<FavoriteProduct>(
       table: 'favorite_products',
       familyId: familyId,
@@ -258,6 +278,7 @@ class SyncService {
       calendarEvents: pulledCalendarEvents,
       nutritionGoals: pulledNutritionGoals,
       nutritionEntries: pulledNutritionEntries,
+      trainingEntries: pulledTrainingEntries,
       favoriteProducts: pulledFavoriteProducts,
       receipts: pulledReceipts,
     );
@@ -380,6 +401,14 @@ class SyncService {
           )
           .toList(),
       nutritionEntries: data.nutritionEntries
+          .map(
+            (item) => item.copyWith(
+              familyId: familyId,
+              syncStatus: SyncStatus.pending,
+            ),
+          )
+          .toList(),
+      trainingEntries: data.trainingEntries
           .map(
             (item) => item.copyWith(
               familyId: familyId,

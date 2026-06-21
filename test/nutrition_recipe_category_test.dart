@@ -18,16 +18,33 @@ void main() {
 
     await appState.createFamily(familyName: 'Dom', memberName: 'Tomek');
     final memberId = appState.data.currentMember!.id;
+    await appState.addCalendarMember(name: 'Anna');
+    final anna = appState.data.activeMembers.firstWhere(
+      (member) => member.name == 'Anna',
+    );
 
     await appState.saveNutritionGoal(dailyCalories: 2400, dailyProtein: 140);
+    await appState.saveNutritionGoal(
+      memberId: anna.id,
+      dailyCalories: 1800,
+      dailyProtein: 90,
+    );
     await appState.addNutritionEntry(
       date: DateTime(2026, 6, 21),
       calories: 620,
       protein: 42,
       note: 'Obiad',
     );
+    await appState.addTrainingEntry(
+      memberId: anna.id,
+      date: DateTime(2026, 6, 21),
+      durationMinutes: 45,
+      activity: 'Silownia',
+      note: 'Nogi',
+    );
 
     expect(appState.nutritionGoalForMember(memberId)!.dailyCalories, 2400);
+    expect(appState.nutritionGoalForMember(anna.id)!.dailyProtein, 90);
     expect(
       appState.nutritionEntriesForDate(DateTime(2026, 6, 21)),
       hasLength(1),
@@ -35,6 +52,14 @@ void main() {
     expect(
       appState.nutritionEntriesForDate(DateTime(2026, 6, 21)).single.protein,
       42,
+    );
+    expect(
+      appState.trainingEntriesForDate(DateTime(2026, 6, 21)),
+      hasLength(1),
+    );
+    expect(
+      appState.trainingEntriesForDate(DateTime(2026, 6, 21)).single.toRemote(),
+      containsPair('duration_minutes', 45),
     );
   });
 

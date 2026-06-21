@@ -18,6 +18,7 @@ class LocalStore {
   static const _calendarEventsKey = 'calendarEvents';
   static const _nutritionGoalsKey = 'nutritionGoals';
   static const _nutritionEntriesKey = 'nutritionEntries';
+  static const _trainingEntriesKey = 'trainingEntries';
   static const _favoriteProductsKey = 'favoriteProducts';
   static const _receiptsKey = 'receipts';
   static const _lastSyncKey = 'lastSyncAt';
@@ -49,6 +50,7 @@ class LocalStore {
         _nutritionEntriesKey,
         NutritionEntry.fromJson,
       ),
+      trainingEntries: _readList(_trainingEntriesKey, TrainingEntry.fromJson),
       favoriteProducts: _readList(
         _favoriteProductsKey,
         FavoriteProduct.fromJson,
@@ -84,6 +86,10 @@ class LocalStore {
       _writeList(
         _nutritionEntriesKey,
         data.nutritionEntries.map((item) => item.toJson()),
+      ),
+      _writeList(
+        _trainingEntriesKey,
+        data.trainingEntries.map((item) => item.toJson()),
       ),
       _writeList(
         _favoriteProductsKey,
@@ -130,6 +136,7 @@ class LocalStore {
       _prefs.remove(_calendarEventsKey),
       _prefs.remove(_nutritionGoalsKey),
       _prefs.remove(_nutritionEntriesKey),
+      _prefs.remove(_trainingEntriesKey),
       _prefs.remove(_favoriteProductsKey),
       _prefs.remove(_receiptsKey),
       _prefs.remove(_lastSyncKey),

@@ -178,6 +178,23 @@ const tables = {
     boolColumns: ["is_deleted"],
     numberColumns: ["calories", "protein"],
   },
+  training_entries: {
+    columns: [
+      "id",
+      "family_id",
+      "member_id",
+      "training_date",
+      "activity",
+      "duration_minutes",
+      "note",
+      "created_at",
+      "updated_at",
+      "created_by",
+      "is_deleted",
+    ],
+    boolColumns: ["is_deleted"],
+    numberColumns: ["duration_minutes"],
+  },
   favorite_products: {
     columns: [
       "id",
@@ -224,15 +241,27 @@ app.get("/", (_req, res) => {
   res.json({
     name: "Rodzinna Lista Zakupów API",
     status: "ok",
+    schemaVersion: 3,
     health: "/api/health",
   });
 });
 
 app.get("/api/health", (_req, res) => {
+  const existingTables = db
+    .prepare("select name from sqlite_master where type = 'table' order by name")
+    .all()
+    .map((row) => row.name);
+  const expectedTables = Object.keys(tables);
+  const missingTables = expectedTables.filter((table) => !existingTables.includes(table));
+
   res.json({
-    ok: true,
+    ok: missingTables.length === 0,
+    schemaVersion: 3,
     database: path.basename(dbPath),
-    tables: Object.keys(tables),
+    dbPath,
+    expectedTables,
+    tables: existingTables.filter((table) => expectedTables.includes(table)),
+    missingTables,
   });
 });
 
@@ -419,6 +448,20 @@ function initializeDatabase() {
       is_deleted integer not null default 0
     );
 
+    create table if not exists training_entries (
+      id text primary key,
+      family_id text not null references families(id) on delete cascade,
+      member_id text not null references members(id) on delete cascade,
+      training_date text not null,
+      activity text not null default 'Trening',
+      duration_minutes integer not null default 0,
+      note text not null default '',
+      created_at text not null,
+      updated_at text not null,
+      created_by text not null,
+      is_deleted integer not null default 0
+    );
+
     create table if not exists favorite_products (
       id text primary key,
       family_id text not null references families(id) on delete cascade,
@@ -464,6 +507,9 @@ function initializeDatabase() {
     create index if not exists nutrition_goals_member_id_idx on nutrition_goals (member_id);
     create index if not exists nutrition_entries_family_id_idx on nutrition_entries (family_id);
     create index if not exists nutrition_entries_date_idx on nutrition_entries (entry_date);
+    create index if not exists training_entries_family_id_idx on training_entries (family_id);
+    create index if not exists training_entries_member_id_idx on training_entries (member_id);
+    create index if not exists training_entries_date_idx on training_entries (training_date);
     create index if not exists favorite_products_family_id_idx on favorite_products (family_id);
     create index if not exists receipts_family_id_idx on receipts (family_id);
     create index if not exists receipts_purchased_at_idx on receipts (purchased_at);

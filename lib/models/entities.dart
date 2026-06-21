@@ -104,6 +104,7 @@ class AppData {
     required this.calendarEvents,
     required this.nutritionGoals,
     required this.nutritionEntries,
+    required this.trainingEntries,
     required this.favoriteProducts,
     required this.receipts,
   });
@@ -121,6 +122,7 @@ class AppData {
       calendarEvents: [],
       nutritionGoals: [],
       nutritionEntries: [],
+      trainingEntries: [],
       favoriteProducts: [],
       receipts: [],
     );
@@ -137,6 +139,7 @@ class AppData {
   final List<CalendarEvent> calendarEvents;
   final List<NutritionGoal> nutritionGoals;
   final List<NutritionEntry> nutritionEntries;
+  final List<TrainingEntry> trainingEntries;
   final List<FavoriteProduct> favoriteProducts;
   final List<Receipt> receipts;
 
@@ -165,6 +168,9 @@ class AppData {
 
   List<NutritionEntry> get activeNutritionEntries =>
       nutritionEntries.where((entry) => !entry.isDeleted).toList();
+
+  List<TrainingEntry> get activeTrainingEntries =>
+      trainingEntries.where((entry) => !entry.isDeleted).toList();
 
   List<FavoriteProduct> get activeFavoriteProducts =>
       favoriteProducts.where((product) => !product.isDeleted).toList();
@@ -202,6 +208,9 @@ class AppData {
     count += nutritionEntries
         .where((item) => item.syncStatus != SyncStatus.synced)
         .length;
+    count += trainingEntries
+        .where((item) => item.syncStatus != SyncStatus.synced)
+        .length;
     count += favoriteProducts
         .where((item) => item.syncStatus != SyncStatus.synced)
         .length;
@@ -223,6 +232,7 @@ class AppData {
     List<CalendarEvent>? calendarEvents,
     List<NutritionGoal>? nutritionGoals,
     List<NutritionEntry>? nutritionEntries,
+    List<TrainingEntry>? trainingEntries,
     List<FavoriteProduct>? favoriteProducts,
     List<Receipt>? receipts,
     bool clearFamily = false,
@@ -240,6 +250,7 @@ class AppData {
       calendarEvents: calendarEvents ?? this.calendarEvents,
       nutritionGoals: nutritionGoals ?? this.nutritionGoals,
       nutritionEntries: nutritionEntries ?? this.nutritionEntries,
+      trainingEntries: trainingEntries ?? this.trainingEntries,
       favoriteProducts: favoriteProducts ?? this.favoriteProducts,
       receipts: receipts ?? this.receipts,
     );
@@ -1456,6 +1467,136 @@ class NutritionEntry {
       date: date ?? this.date,
       calories: calories ?? this.calories,
       protein: protein ?? this.protein,
+      note: note ?? this.note,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      createdBy: createdBy ?? this.createdBy,
+      isDeleted: isDeleted ?? this.isDeleted,
+      syncStatus: syncStatus ?? this.syncStatus,
+    );
+  }
+}
+
+class TrainingEntry {
+  const TrainingEntry({
+    required this.id,
+    required this.familyId,
+    required this.memberId,
+    required this.date,
+    required this.activity,
+    required this.durationMinutes,
+    required this.note,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.createdBy,
+    required this.isDeleted,
+    required this.syncStatus,
+  });
+
+  factory TrainingEntry.fromJson(Map<String, dynamic> json) {
+    return TrainingEntry(
+      id: json['id'].toString(),
+      familyId: (json['familyId'] ?? json['family_id']).toString(),
+      memberId: (json['memberId'] ?? json['member_id']).toString(),
+      date: dateFromJson(json['date'] ?? json['training_date']),
+      activity: json['activity']?.toString() ?? 'Trening',
+      durationMinutes: intFromJson(
+        json['durationMinutes'] ?? json['duration_minutes'],
+      ),
+      note: json['note']?.toString() ?? '',
+      createdAt: dateFromJson(json['createdAt'] ?? json['created_at']),
+      updatedAt: dateFromJson(json['updatedAt'] ?? json['updated_at']),
+      createdBy:
+          json['createdBy']?.toString() ?? json['created_by']?.toString() ?? '',
+      isDeleted: boolFromJson(json['isDeleted'] ?? json['is_deleted']),
+      syncStatus: syncStatusFromJson(json['syncStatus']),
+    );
+  }
+
+  factory TrainingEntry.fromRemote(Map<String, dynamic> json) {
+    return TrainingEntry(
+      id: json['id'].toString(),
+      familyId: json['family_id'].toString(),
+      memberId: json['member_id'].toString(),
+      date: dateFromJson(json['training_date']),
+      activity: json['activity']?.toString() ?? 'Trening',
+      durationMinutes: intFromJson(json['duration_minutes']),
+      note: json['note']?.toString() ?? '',
+      createdAt: dateFromJson(json['created_at']),
+      updatedAt: dateFromJson(json['updated_at']),
+      createdBy: json['created_by']?.toString() ?? '',
+      isDeleted: boolFromJson(json['is_deleted'] ?? json['deleted']),
+      syncStatus: SyncStatus.synced,
+    );
+  }
+
+  final String id;
+  final String familyId;
+  final String memberId;
+  final DateTime date;
+  final String activity;
+  final int durationMinutes;
+  final String note;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String createdBy;
+  final bool isDeleted;
+  final SyncStatus syncStatus;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'familyId': familyId,
+      'memberId': memberId,
+      'date': date.toIso8601String(),
+      'activity': activity,
+      'durationMinutes': durationMinutes,
+      'note': note,
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+      'createdBy': createdBy,
+      'isDeleted': isDeleted,
+      'syncStatus': syncStatus.name,
+    };
+  }
+
+  Map<String, dynamic> toRemote() {
+    return {
+      'id': id,
+      'family_id': familyId,
+      'member_id': memberId,
+      'training_date': date.toIso8601String(),
+      'activity': activity,
+      'duration_minutes': durationMinutes,
+      'note': note,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+      'created_by': createdBy,
+      'is_deleted': isDeleted,
+    };
+  }
+
+  TrainingEntry copyWith({
+    String? id,
+    String? familyId,
+    String? memberId,
+    DateTime? date,
+    String? activity,
+    int? durationMinutes,
+    String? note,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? createdBy,
+    bool? isDeleted,
+    SyncStatus? syncStatus,
+  }) {
+    return TrainingEntry(
+      id: id ?? this.id,
+      familyId: familyId ?? this.familyId,
+      memberId: memberId ?? this.memberId,
+      date: date ?? this.date,
+      activity: activity ?? this.activity,
+      durationMinutes: durationMinutes ?? this.durationMinutes,
       note: note ?? this.note,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

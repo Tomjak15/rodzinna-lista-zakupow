@@ -936,6 +936,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> saveNutritionGoal({
+    String? memberId,
     required int dailyCalories,
     required double dailyProtein,
   }) async {
@@ -944,9 +945,15 @@ class AppState extends ChangeNotifier {
     if (family == null || member == null) {
       return;
     }
+    final targetMemberId = memberId ?? member.id;
+    if (targetMemberId != member.id && !isFamilyCreator) {
+      throw const AppActionException(
+        'Tylko glowa rodziny moze ustawiac cele innych osob.',
+      );
+    }
     final now = DateTime.now().toUtc();
     final index = _data.nutritionGoals.indexWhere(
-      (goal) => !goal.isDeleted && goal.memberId == member.id,
+      (goal) => !goal.isDeleted && goal.memberId == targetMemberId,
     );
     if (index == -1) {
       _data = _data.copyWith(
@@ -955,9 +962,9 @@ class AppState extends ChangeNotifier {
           NutritionGoal(
             id: _uuid.v4(),
             familyId: family.id,
-            memberId: member.id,
+            memberId: targetMemberId,
             dailyCalories: max(0, dailyCalories),
-            dailyProtein: max(0, dailyProtein),
+            dailyProtein: max(0, dailyProtein).toDouble(),
             createdAt: now,
             updatedAt: now,
             createdBy: member.id,
@@ -974,7 +981,7 @@ class AppState extends ChangeNotifier {
     final current = updated[index];
     updated[index] = current.copyWith(
       dailyCalories: max(0, dailyCalories),
-      dailyProtein: max(0, dailyProtein),
+      dailyProtein: max(0, dailyProtein).toDouble(),
       updatedAt: now,
       syncStatus: SyncStatus.pending,
     );
@@ -1032,6 +1039,65 @@ class AppState extends ChangeNotifier {
     await _persist(scheduleSync: true);
   }
 
+  Future<void> addTrainingEntry({
+    String? memberId,
+    required DateTime date,
+    required int durationMinutes,
+    required String activity,
+    required String note,
+  }) async {
+    final family = _data.family;
+    final member = _data.currentMember;
+    if (family == null || member == null || durationMinutes <= 0) {
+      return;
+    }
+    final targetMemberId = memberId ?? member.id;
+    if (targetMemberId != member.id && !isFamilyCreator) {
+      throw const AppActionException(
+        'Tylko glowa rodziny moze dopisywac treningi innych osob.',
+      );
+    }
+    final now = DateTime.now().toUtc();
+    final entry = TrainingEntry(
+      id: _uuid.v4(),
+      familyId: family.id,
+      memberId: targetMemberId,
+      date: _dateOnlyUtc(date),
+      activity: activity.trim().isEmpty ? 'Trening' : activity.trim(),
+      durationMinutes: max(0, durationMinutes),
+      note: note.trim(),
+      createdAt: now,
+      updatedAt: now,
+      createdBy: member.id,
+      isDeleted: false,
+      syncStatus: SyncStatus.pending,
+    );
+    _data = _data.copyWith(trainingEntries: [..._data.trainingEntries, entry]);
+    await _persist(scheduleSync: true);
+  }
+
+  Future<void> deleteTrainingEntry(TrainingEntry entry) async {
+    final member = _data.currentMember;
+    if (member == null || (entry.memberId != member.id && !isFamilyCreator)) {
+      return;
+    }
+    final now = DateTime.now().toUtc();
+    _data = _data.copyWith(
+      trainingEntries: _data.trainingEntries
+          .map(
+            (item) => item.id == entry.id
+                ? item.copyWith(
+                    isDeleted: true,
+                    updatedAt: now,
+                    syncStatus: SyncStatus.pending,
+                  )
+                : item,
+          )
+          .toList(),
+    );
+    await _persist(scheduleSync: true);
+  }
+
   Recipe? mainRecipeFor(Meal meal) {
     for (final recipe in _data.activeRecipes) {
       if (recipe.mealId == meal.id && recipe.parentRecipeId == null) {
@@ -1074,6 +1140,14 @@ class AppState extends ChangeNotifier {
   List<NutritionEntry> nutritionEntriesForDate(DateTime date) {
     final cleanDate = _dateOnlyUtc(date);
     return _data.activeNutritionEntries
+        .where((entry) => _isSameUtcDate(entry.date, cleanDate))
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+  }
+
+  List<TrainingEntry> trainingEntriesForDate(DateTime date) {
+    final cleanDate = _dateOnlyUtc(date);
+    return _data.activeTrainingEntries
         .where((entry) => _isSameUtcDate(entry.date, cleanDate))
         .toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
@@ -1277,6 +1351,17 @@ class AppState extends ChangeNotifier {
               : entry,
         )
         .toList();
+    final updatedTrainingEntries = data.trainingEntries
+        .map(
+          (entry) => entry.memberId == memberId && !entry.isDeleted
+              ? entry.copyWith(
+                  isDeleted: true,
+                  updatedAt: now,
+                  syncStatus: SyncStatus.pending,
+                )
+              : entry,
+        )
+        .toList();
 
     return data.copyWith(
       currentMember: updatedCurrentMember,
@@ -1284,6 +1369,7 @@ class AppState extends ChangeNotifier {
       calendarEvents: updatedEvents,
       nutritionGoals: updatedNutritionGoals,
       nutritionEntries: updatedNutritionEntries,
+      trainingEntries: updatedTrainingEntries,
     );
   }
 

@@ -514,7 +514,7 @@ class _NutritionCalendar extends StatelessWidget {
             ),
             IconButton.filledTonal(
               tooltip: 'Ustaw cel',
-              onPressed: member == null
+              onPressed: member == null || !appState.isFamilyCreator
                   ? null
                   : () => _openGoalDialog(context, goal),
               icon: const Icon(Icons.flag_outlined),
