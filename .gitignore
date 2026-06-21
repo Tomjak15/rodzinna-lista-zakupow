@@ -47,3 +47,8 @@ app.*.map.json
 # Local helper binaries and tunnel logs
 /tools/
 /cloudflared.log
+
+# Cloudflare local state
+/cloudflare-worker/node_modules/
+/cloudflare-worker/.wrangler/
+/cloudflare-worker/worker-configuration.d.ts

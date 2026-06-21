@@ -11,7 +11,8 @@ Do wspólnej listy między kilkoma telefonami potrzebny jest serwer w internecie
 - Node.js + Express
 - SQLite
 - automatyczne tworzenie bazy i tabel przy starcie
-- gotowy do wrzucenia na Replit
+- Cloudflare Workers + D1, czyli darmowy backend w chmurze bez włączonego komputera
+- lokalny wariant Node.js + SQLite do testów na komputerze
 
 ## Technologia
 
@@ -34,7 +35,11 @@ lib/
 server/
   index.js             Serwer Node/Express
   package.json         Zależności serwera
-  README.md            Instrukcja Replit
+  README.md            Instrukcja lokalnego serwera Node
+cloudflare-worker/
+  src/index.js          Serverless API dla Cloudflare Workers
+  migrations/           Schemat bazy D1
+  scripts/              Deploy i eksport danych do D1
 android/               Konfiguracja APK
 ios/                   Konfiguracja iOS
 web/                   Manifest i konfiguracja PWA
@@ -84,6 +89,46 @@ http://localhost:3000/api/health
 ```
 
 Baza SQLite tworzy się automatycznie w `server/data/rodzinna_lista.sqlite`.
+
+## Cloudflare Workers + D1
+
+To jest najlepsza darmowa ścieżka, gdy aplikacja ma synchronizować dane bez włączonego komputera.
+
+Backend Cloudflare ma te same endpointy co lokalny serwer Node, ale:
+
+- API działa jako Cloudflare Worker,
+- baza działa jako Cloudflare D1,
+- komputer nie musi być włączony,
+- aktualna lokalna baza SQLite może zostać wyeksportowana i wgrana do D1.
+
+Wymagane jest konto Cloudflare i logowanie przez Wrangler. Aktualnie wdrożony serwer:
+
+```text
+https://rodzinna-lista-zakupow-api.rodzinna-lista-zakupow-tomek.workers.dev
+```
+
+Deploy z katalogu głównego:
+
+```powershell
+.\cloudflare-worker\scripts\deploy-cloudflare.ps1
+```
+
+Skrypt:
+
+1. instaluje narzędzia Cloudflare,
+2. loguje do konta Cloudflare, jeśli trzeba,
+3. tworzy bazę D1,
+4. wgrywa schemat tabel,
+5. eksportuje obecną lokalną bazę SQLite,
+6. importuje dane do D1,
+7. publikuje Workera,
+8. buduje APK z adresem nowego serwera.
+
+Po deployu adres serwera jest zapisany w:
+
+```text
+runtime/cloudflare-hosting.env
+```
 
 ## Replit
 
@@ -170,16 +215,16 @@ flutter run -d chrome \
   --dart-define=SERVER_URL=http://localhost:3000
 ```
 
-Z serwerem Replit:
+Z serwerem Cloudflare:
 
 ```bash
 flutter run -d chrome \
-  --dart-define=SERVER_URL=https://twoj-serwer.replit.app
+  --dart-define=SERVER_URL=https://rodzinna-lista-zakupow-api.rodzinna-lista-zakupow-tomek.workers.dev
 ```
 
-Jeśli uruchomisz aplikację bez `SERVER_URL`, wejdź w `Ustawienia > Adres serwera` i wpisz tam adres Replit.
+Jeśli uruchomisz aplikację bez `SERVER_URL`, aplikacja użyje domyślnego adresu Cloudflare z `lib/config/backend_config.dart`.
 
-Na Androidzie, jeżeli używasz serwera lokalnego z telefonu fizycznego, `localhost` oznacza telefon, nie komputer. Wtedy użyj adresu IP komputera w sieci Wi-Fi albo publicznego adresu Replit.
+Na Androidzie, jeżeli używasz serwera lokalnego z telefonu fizycznego, `localhost` oznacza telefon, nie komputer. Wtedy użyj adresu IP komputera w sieci Wi-Fi albo publicznego adresu Cloudflare.
 
 ## APK na Androida
 
@@ -197,7 +242,12 @@ flutter build apk --release
 
 Release APK jest podpisywane lokalnym kluczem z `android/key.properties` i `android/app/rodzinna-lista-release.jks`. Tych plików nie wrzucaj do GitHub ani ZIP, ale zachowaj je na komputerze, bo ten sam klucz jest potrzebny do aktualizacji aplikacji na telefonie.
 
-Po instalacji APK wpisz adres serwera w `Ustawienia > Adres serwera`. Jeżeli wolisz wbudować adres na stałe, dodaj `--dart-define=SERVER_URL=https://twoj-serwer.onrender.com`.
+Release APK domyślnie łączy się z aktualnym serwerem Cloudflare. Jeżeli chcesz nadpisać adres, użyj:
+
+```bash
+flutter build apk --release \
+  --dart-define=SERVER_URL=https://rodzinna-lista-zakupow-api.rodzinna-lista-zakupow-tomek.workers.dev
+```
 
 Plik APK będzie w:
 
@@ -213,14 +263,14 @@ Uruchomienie na podłączonym iPhonie:
 
 ```bash
 flutter run -d ios \
-  --dart-define=SERVER_URL=https://twoj-serwer.replit.app
+  --dart-define=SERVER_URL=https://rodzinna-lista-zakupow-api.rodzinna-lista-zakupow-tomek.workers.dev
 ```
 
 Build release:
 
 ```bash
 flutter build ios --release \
-  --dart-define=SERVER_URL=https://twoj-serwer.replit.app
+  --dart-define=SERVER_URL=https://rodzinna-lista-zakupow-api.rodzinna-lista-zakupow-tomek.workers.dev
 ```
 
 Publikacja:
@@ -236,7 +286,7 @@ Build web/PWA:
 
 ```bash
 flutter build web --release --pwa-strategy=offline-first \
-  --dart-define=SERVER_URL=https://twoj-serwer.replit.app
+  --dart-define=SERVER_URL=https://rodzinna-lista-zakupow-api.rodzinna-lista-zakupow-tomek.workers.dev
 ```
 
 Pliki PWA będą w:
@@ -267,4 +317,4 @@ Serwer tworzy tabele:
 
 Każdy rekord ma `id`, `family_id`, `created_at`, `updated_at`, `created_by` oraz `is_deleted`. Podprzepisy są zapisane w tabeli `recipes` przez pole `parent_recipe_id`.
 
-SQLite na Replit wystarczy do prototypu i małej rodzinnej aplikacji. Przy większej liczbie użytkowników warto później przenieść serwer na hosting z trwałym dyskiem albo PostgreSQL.
+Cloudflare Workers + D1 jest teraz głównym darmowym hostingiem dla synchronizacji. Lokalny serwer Node/SQLite zostaje jako tryb developerski i zapasowy.

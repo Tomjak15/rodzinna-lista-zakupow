@@ -1,0 +1,20 @@
+﻿{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "rodzinna-lista-zakupow-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-05-03",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "rodzinna-lista-zakupow",
+      "database_id": "1ed81462-5326-459c-91b4-52a8f4702bf8",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
+

@@ -156,7 +156,8 @@ class SettingsScreen extends StatelessWidget {
           keyboardType: TextInputType.url,
           decoration: const InputDecoration(
             labelText: 'SERVER_URL',
-            hintText: 'https://twoj-serwer.replit.app',
+            hintText:
+                'https://rodzinna-lista-zakupow-api.twoj-login.workers.dev',
           ),
         ),
         actions: [

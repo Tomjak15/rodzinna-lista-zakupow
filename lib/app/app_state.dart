@@ -42,6 +42,7 @@ class AppState extends ChangeNotifier {
   static const _legacyBrokenServerUrls = {
     'https://rodzinna-lista-zakupow--tomjak15.replit.app',
     'https://breezy-rivers-remain.loca.lt',
+    'https://grams-tribune-handhelds-recognised.trycloudflare.com',
     'https://travel-authentication-measured-income.trycloudflare.com',
     'https://create-anonymous-nickel-researchers.trycloudflare.com',
     'https://15d2bff4298c6914-83-21-102-8.serveousercontent.com',

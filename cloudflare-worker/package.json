@@ -1,0 +1,17 @@
+{
+  "name": "rodzinna-lista-zakupow-cloudflare-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker + D1 API dla aplikacji Rodzinna Lista Zakupow.",
+  "scripts": {
+    "check": "wrangler check",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy --minify",
+    "db:migrate:local": "wrangler d1 migrations apply rodzinna-lista-zakupow --local",
+    "db:migrate:remote": "wrangler d1 migrations apply rodzinna-lista-zakupow --remote"
+  },
+  "devDependencies": {
+    "wrangler": "^4.86.0"
+  }
+}

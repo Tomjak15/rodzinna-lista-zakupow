@@ -2,7 +2,7 @@ class BackendConfig {
   static const serverUrl = String.fromEnvironment(
     'SERVER_URL',
     defaultValue:
-        'https://grams-tribune-handhelds-recognised.trycloudflare.com',
+        'https://rodzinna-lista-zakupow-api.rodzinna-lista-zakupow-tomek.workers.dev',
   );
 
   static bool get isConfigured => serverUrl.startsWith('http');
