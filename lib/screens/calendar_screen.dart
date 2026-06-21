@@ -180,7 +180,7 @@ class _MealCalendar extends StatelessWidget {
         if (meals.isEmpty)
           const _CalendarInfo(
             icon: Icons.restaurant_menu_outlined,
-            text: 'Najpierw dodaj obiad w zakładce Obiady.',
+            text: 'Najpierw dodaj przepis w zakładce Przepisy.',
           )
         else if (plans.isEmpty)
           const _CalendarInfo(

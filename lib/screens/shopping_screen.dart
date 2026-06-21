@@ -389,7 +389,7 @@ class _AddProductSheetState extends State<_AddProductSheet> {
     for (final suggestion in productCatalog) {
       add(suggestion);
     }
-    for (final item in data.activeShoppingItems) {
+    for (final item in data.shoppingItems) {
       add(ProductSuggestion(item.name, item.quantity, item.unit));
     }
     for (final product in data.activeFavoriteProducts) {

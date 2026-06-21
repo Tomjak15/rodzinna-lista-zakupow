@@ -6,27 +6,79 @@ import '../app/app_scope.dart';
 import '../models/entities.dart';
 import '../models/ingredient_draft.dart';
 
-class MealsScreen extends StatelessWidget {
+class MealsScreen extends StatefulWidget {
   const MealsScreen({super.key});
+
+  @override
+  State<MealsScreen> createState() => _MealsScreenState();
+}
+
+class _MealsScreenState extends State<MealsScreen> {
+  String _selectedCategory = 'Wszystkie';
 
   @override
   Widget build(BuildContext context) {
     final appState = AppScope.of(context);
-    final meals = [...appState.data.activeMeals]
+    final allMeals = [...appState.data.activeMeals]
       ..sort((a, b) => a.name.compareTo(b.name));
+    final meals = _selectedCategory == 'Wszystkie'
+        ? allMeals
+        : allMeals
+              .where(
+                (meal) =>
+                    _categoryForRecipeName(meal.name) == _selectedCategory,
+              )
+              .toList();
 
     return Scaffold(
-      body: meals.isEmpty
-          ? const _EmptyMeals()
-          : ListView.builder(
-              padding: const EdgeInsets.only(top: 8, bottom: 96),
-              itemCount: meals.length,
-              itemBuilder: (context, index) => _MealTile(meal: meals[index]),
-            ),
+      body: ListView(
+        padding: const EdgeInsets.only(top: 8, bottom: 96),
+        children: [
+          _RecipeCategoryBar(
+            selectedCategory: _selectedCategory,
+            onChanged: (category) =>
+                setState(() => _selectedCategory = category),
+          ),
+          if (meals.isEmpty)
+            const _EmptyMeals()
+          else
+            ...meals.map((meal) => _MealTile(meal: meal)),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openMealDialog(context),
         icon: const Icon(Icons.add),
-        label: const Text('Dodaj obiad'),
+        label: const Text('Dodaj przepis'),
+      ),
+    );
+  }
+}
+
+class _RecipeCategoryBar extends StatelessWidget {
+  const _RecipeCategoryBar({
+    required this.selectedCategory,
+    required this.onChanged,
+  });
+
+  final String selectedCategory;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: recipeCategoryNames
+            .map(
+              (category) => FilterChip(
+                selected: selectedCategory == category,
+                label: Text(category),
+                onSelected: (_) => onChanged(category),
+              ),
+            )
+            .toList(),
       ),
     );
   }
@@ -146,6 +198,10 @@ class _RecipeDetails extends StatelessWidget {
             ),
             _SyncDot(status: recipe.syncStatus),
           ],
+        ),
+        Text(
+          'Autor: ${appState.memberById(recipe.createdBy)?.name ?? 'Rodzina'}',
+          style: Theme.of(context).textTheme.labelMedium,
         ),
         if (recipe.instructions.isNotEmpty) ...[
           const SizedBox(height: 6),
@@ -841,4 +897,34 @@ Future<void> _confirmDeleteMeal(BuildContext context, Meal meal) async {
   if (confirmed == true && context.mounted) {
     await AppScope.of(context).deleteMeal(meal);
   }
+}
+
+const recipeCategoryNames = [
+  'Wszystkie',
+  'Obiady',
+  'Śniadania',
+  'Fit',
+  'Desery',
+  'Gotowce',
+];
+
+String _categoryForRecipeName(String name) {
+  final lower = name.toLowerCase();
+  if (_containsAny(lower, ['owsianka', 'jajecznica', 'kanap', 'tost'])) {
+    return 'Śniadania';
+  }
+  if (_containsAny(lower, ['fit', 'protein', 'białk', 'salat', 'sałat'])) {
+    return 'Fit';
+  }
+  if (_containsAny(lower, ['ciasto', 'deser', 'lody', 'muffin', 'naleś'])) {
+    return 'Desery';
+  }
+  if (_containsAny(lower, ['mroż', 'gotow', 'pierogi', 'pizza', 'frytki'])) {
+    return 'Gotowce';
+  }
+  return 'Obiady';
+}
+
+bool _containsAny(String value, List<String> needles) {
+  return needles.any(value.contains);
 }

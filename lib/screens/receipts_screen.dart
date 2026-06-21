@@ -74,6 +74,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
       final parsed = parseReceiptText(result.text);
       await _openReceiptEditor(
         context,
+        initialStoreName: parsed.storeName,
         initialItems: parsed.items,
         initialTotal: parsed.total,
         imageData: result.imageData,
@@ -95,6 +96,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
 
   Future<void> _openReceiptEditor(
     BuildContext context, {
+    String? initialStoreName,
     List<ReceiptItem> initialItems = const [],
     double initialTotal = 0,
     String? imageData,
@@ -105,6 +107,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
       isScrollControlled: true,
       useSafeArea: true,
       builder: (_) => _ReceiptEditorSheet(
+        initialStoreName: initialStoreName,
         initialItems: initialItems,
         initialTotal: initialTotal,
         imageData: imageData,
@@ -167,7 +170,7 @@ class _ReceiptTile extends StatelessWidget {
         leading: _ReceiptThumbnail(receipt: receipt),
         title: Text(receipt.storeName.isEmpty ? 'Sklep' : receipt.storeName),
         subtitle: Text(
-          '${_formatMoney(receipt.total)} • '
+          '${_formatMoney(receipt.total)} - '
           '${DateFormat('dd.MM.yyyy, HH:mm').format(receipt.purchasedAt.toLocal())}',
         ),
         children: [
@@ -195,7 +198,7 @@ class _ReceiptTile extends StatelessWidget {
                 dense: true,
                 title: Text(item.name),
                 subtitle: Text(
-                  '${formatQuantity(item.quantity)} ${item.unit} • '
+                  '${formatQuantity(item.quantity)} ${item.unit} - '
                   '${_formatMoney(item.price)}',
                 ),
               ),
@@ -263,12 +266,14 @@ class _ReceiptThumbnail extends StatelessWidget {
 
 class _ReceiptEditorSheet extends StatefulWidget {
   const _ReceiptEditorSheet({
+    required this.initialStoreName,
     required this.initialItems,
     required this.initialTotal,
     required this.imageData,
     required this.imageMimeType,
   });
 
+  final String? initialStoreName;
   final List<ReceiptItem> initialItems;
   final double initialTotal;
   final String? imageData;
@@ -280,32 +285,35 @@ class _ReceiptEditorSheet extends StatefulWidget {
 
 class _ReceiptEditorSheetState extends State<_ReceiptEditorSheet> {
   final _formKey = GlobalKey<FormState>();
-  final _storeController = TextEditingController(text: 'Sklep');
+  late final TextEditingController _storeController;
   late final TextEditingController _totalController;
-  late final TextEditingController _productsController;
-  late ParsedReceipt _parsedProducts;
+  late final List<_ReceiptItemController> _itemLines;
 
   @override
   void initState() {
     super.initState();
+    _storeController = TextEditingController(
+      text: widget.initialStoreName?.trim().isNotEmpty == true
+          ? widget.initialStoreName!.trim()
+          : 'Sklep',
+    );
     _totalController = TextEditingController(
       text: widget.initialTotal > 0
           ? _formatPlainMoney(widget.initialTotal)
           : '',
     );
-    _productsController = TextEditingController(
-      text: widget.initialItems.map(_receiptItemToLine).join('\n'),
-    );
-    _parsedProducts = parseReceiptText(_productsController.text);
-    _productsController.addListener(_refreshProducts);
+    _itemLines = widget.initialItems
+        .map((item) => _ReceiptItemController.from(item))
+        .toList();
   }
 
   @override
   void dispose() {
-    _productsController.removeListener(_refreshProducts);
     _storeController.dispose();
     _totalController.dispose();
-    _productsController.dispose();
+    for (final line in _itemLines) {
+      line.dispose();
+    }
     super.dispose();
   }
 
@@ -365,19 +373,12 @@ class _ReceiptEditorSheetState extends State<_ReceiptEditorSheet> {
                 },
               ),
               const SizedBox(height: 12),
-              TextFormField(
-                controller: _productsController,
-                minLines: 3,
-                maxLines: 7,
-                decoration: const InputDecoration(
-                  labelText: 'Produkty',
-                  hintText: 'Chleb 1 szt. 4,99',
-                  alignLabelWithHint: true,
-                  prefixIcon: Icon(Icons.list_alt_outlined),
-                ),
+              _ReceiptItemsEditor(
+                lines: _itemLines,
+                onAdd: _addItemLine,
+                onRemove: _removeItemLine,
+                onChanged: _refreshItems,
               ),
-              const SizedBox(height: 12),
-              _ParsedReceiptPreview(parsed: _parsedProducts),
               const SizedBox(height: 12),
               Align(
                 alignment: Alignment.centerRight,
@@ -398,11 +399,15 @@ class _ReceiptEditorSheetState extends State<_ReceiptEditorSheet> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
+    final items = _itemLines
+        .map((line) => line.toItem())
+        .whereType<ReceiptItem>()
+        .toList();
     await AppScope.of(context).addReceipt(
       storeName: _storeController.text,
       purchasedAt: DateTime.now(),
       total: _parseMoney(_totalController.text),
-      items: _parsedProducts.items,
+      items: items,
       rawText: '',
       imageData: widget.imageData,
       imageMimeType: widget.imageMimeType,
@@ -412,10 +417,21 @@ class _ReceiptEditorSheetState extends State<_ReceiptEditorSheet> {
     }
   }
 
-  void _refreshProducts() {
+  void _addItemLine() {
     setState(() {
-      _parsedProducts = parseReceiptText(_productsController.text);
+      _itemLines.add(_ReceiptItemController());
     });
+  }
+
+  void _removeItemLine(int index) {
+    setState(() {
+      final removed = _itemLines.removeAt(index);
+      removed.dispose();
+    });
+  }
+
+  void _refreshItems() {
+    setState(() {});
   }
 }
 
@@ -452,44 +468,204 @@ class _ReceiptPhotoPreview extends StatelessWidget {
   }
 }
 
-class _ParsedReceiptPreview extends StatelessWidget {
-  const _ParsedReceiptPreview({required this.parsed});
+class _ReceiptItemsEditor extends StatelessWidget {
+  const _ReceiptItemsEditor({
+    required this.lines,
+    required this.onAdd,
+    required this.onRemove,
+    required this.onChanged,
+  });
 
-  final ParsedReceipt parsed;
+  final List<_ReceiptItemController> lines;
+  final VoidCallback onAdd;
+  final ValueChanged<int> onRemove;
+  final VoidCallback onChanged;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final items = lines
+        .map((line) => line.toItem())
+        .whereType<ReceiptItem>()
+        .toList();
+    final total = items.fold<double>(0, (sum, item) => sum + item.price);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Produkty z paragonu',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            Text(
+              '${items.length} - ${_formatMoney(total)}',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (lines.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              border: Border.all(color: const Color(0xFFE5DDCE)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text('Brak rozpoznanych produktów'),
+          )
+        else
+          ...List.generate(
+            lines.length,
+            (index) => _ReceiptItemLineEditor(
+              line: lines[index],
+              onRemove: () => onRemove(index),
+              onChanged: onChanged,
+            ),
+          ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: onAdd,
+            icon: const Icon(Icons.add),
+            label: const Text('Dodaj produkt'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReceiptItemLineEditor extends StatelessWidget {
+  const _ReceiptItemLineEditor({
+    required this.line,
+    required this.onRemove,
+    required this.onChanged,
+  });
+
+  final _ReceiptItemController line;
+  final VoidCallback onRemove;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
+        border: Border.all(color: const Color(0xFFE5DDCE)),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '${parsed.items.length} produktów • '
-            '${_formatMoney(parsed.total)}',
-            style: Theme.of(context).textTheme.titleSmall,
+          TextFormField(
+            controller: line.nameController,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(labelText: 'Nazwa produktu'),
+            onChanged: (_) => onChanged(),
           ),
-          if (parsed.items.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            ...parsed.items
-                .take(6)
-                .map(
-                  (item) => Text(
-                    '${item.name} • ${formatQuantity(item.quantity)} ${item.unit}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: line.quantityController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
                   ),
+                  decoration: const InputDecoration(labelText: 'Ilość'),
+                  onChanged: (_) => onChanged(),
+                  validator: (_) =>
+                      line.nameController.text.trim().isNotEmpty &&
+                          _parseMoney(line.quantityController.text) <= 0
+                      ? 'Ilość'
+                      : null,
                 ),
-          ],
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: line.unitController,
+                  decoration: const InputDecoration(labelText: 'Jedn.'),
+                  onChanged: (_) => onChanged(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: line.priceController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Cena',
+                    suffixText: 'zł',
+                  ),
+                  onChanged: (_) => onChanged(),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Usuń produkt',
+                onPressed: onRemove,
+                icon: const Icon(Icons.delete_outline),
+              ),
+            ],
+          ),
         ],
       ),
     );
+  }
+}
+
+class _ReceiptItemController {
+  _ReceiptItemController()
+    : nameController = TextEditingController(),
+      quantityController = TextEditingController(text: '1'),
+      unitController = TextEditingController(text: 'szt.'),
+      priceController = TextEditingController();
+
+  _ReceiptItemController.from(ReceiptItem item)
+    : nameController = TextEditingController(text: item.name),
+      quantityController = TextEditingController(
+        text: formatQuantity(item.quantity),
+      ),
+      unitController = TextEditingController(text: item.unit),
+      priceController = TextEditingController(
+        text: _formatPlainMoney(item.price),
+      );
+
+  final TextEditingController nameController;
+  final TextEditingController quantityController;
+  final TextEditingController unitController;
+  final TextEditingController priceController;
+
+  ReceiptItem? toItem() {
+    final name = nameController.text.trim();
+    if (name.isEmpty) {
+      return null;
+    }
+    final quantity = _parseMoney(quantityController.text);
+    if (quantity <= 0) {
+      return null;
+    }
+    return ReceiptItem(
+      name: name,
+      quantity: quantity,
+      unit: unitController.text.trim().isEmpty
+          ? 'szt.'
+          : unitController.text.trim(),
+      price: _parseMoney(priceController.text),
+    );
+  }
+
+  void dispose() {
+    nameController.dispose();
+    quantityController.dispose();
+    unitController.dispose();
+    priceController.dispose();
   }
 }
 
@@ -525,11 +701,6 @@ Uint8List? _decodeReceiptImage(String? imageData) {
   } on FormatException {
     return null;
   }
-}
-
-String _receiptItemToLine(ReceiptItem item) {
-  return '${item.name} ${formatQuantity(item.quantity)} ${item.unit} '
-      '${_formatPlainMoney(item.price)}';
 }
 
 String _formatMoney(double value) {

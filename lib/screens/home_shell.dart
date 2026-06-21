@@ -20,7 +20,7 @@ class _HomeShellState extends State<HomeShell> {
 
   static const _titles = [
     'Lista zakupów',
-    'Obiady',
+    'Przepisy',
     'Kalendarz',
     'Paragony',
     'Rodzina',
@@ -69,7 +69,7 @@ class _HomeShellState extends State<HomeShell> {
           NavigationDestination(
             icon: Icon(Icons.restaurant_menu_outlined),
             selectedIcon: Icon(Icons.restaurant_menu),
-            label: 'Obiady',
+            label: 'Przepisy',
           ),
           NavigationDestination(
             icon: Icon(Icons.calendar_month_outlined),

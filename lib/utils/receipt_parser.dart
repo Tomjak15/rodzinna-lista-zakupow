@@ -2,10 +2,15 @@ import '../models/entities.dart';
 import 'ingredient_parser.dart';
 
 class ParsedReceipt {
-  const ParsedReceipt({required this.items, required this.total});
+  const ParsedReceipt({
+    required this.items,
+    required this.total,
+    required this.storeName,
+  });
 
   final List<ReceiptItem> items;
   final double total;
+  final String? storeName;
 }
 
 ParsedReceipt parseReceiptText(String rawText) {
@@ -38,8 +43,12 @@ ParsedReceipt parseReceiptText(String rawText) {
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
 
-    name = name.replaceFirst(RegExp(r'^[0-9]{2,}\s+'), '').trim();
-    if (name.length < 2 || RegExp(r'^\d+$').hasMatch(name)) {
+    name = name
+        .replaceFirst(RegExp(r'^[0-9]{2,}\s+'), '')
+        .replaceAll(RegExp(r'\b\d{5,}\b'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (!_isProductName(name)) {
       continue;
     }
 
@@ -54,16 +63,119 @@ ParsedReceipt parseReceiptText(String rawText) {
   }
 
   final fallbackTotal = items.fold<double>(0, (sum, item) => sum + item.price);
-  return ParsedReceipt(items: items, total: detectedTotal ?? fallbackTotal);
+  return ParsedReceipt(
+    items: items,
+    total: detectedTotal ?? fallbackTotal,
+    storeName: _detectStoreName(lines),
+  );
+}
+
+String? _detectStoreName(List<String> lines) {
+  const knownStores = {
+    'biedronka': 'Biedronka',
+    'lidl': 'Lidl',
+    'kaufland': 'Kaufland',
+    'aldi': 'Aldi',
+    'carrefour': 'Carrefour',
+    'auchan': 'Auchan',
+    'dino': 'Dino',
+    'zabka': 'Zabka',
+    'netto': 'Netto',
+    'stokrotka': 'Stokrotka',
+    'intermarche': 'Intermarche',
+    'lewiatan': 'Lewiatan',
+    'polomarket': 'Polomarket',
+    'rossmann': 'Rossmann',
+    'hebe': 'Hebe',
+    'pepco': 'Pepco',
+    'action': 'Action',
+    'ikea': 'Ikea',
+    'castorama': 'Castorama',
+    'obi': 'OBI',
+    'media expert': 'Media Expert',
+  };
+
+  for (final line in lines.take(12)) {
+    final normalized = _normalizeStoreCandidate(line);
+    for (final entry in knownStores.entries) {
+      if (normalized.contains(entry.key)) {
+        return entry.value;
+      }
+    }
+  }
+
+  for (final line in lines.take(8)) {
+    final candidate = line
+        .replaceAll(RegExp(r'[^A-Za-z0-9 &.-]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    final lower = candidate.toLowerCase();
+    if (candidate.length >= 3 &&
+        candidate.length <= 36 &&
+        RegExp(r'[A-Za-z]').hasMatch(candidate) &&
+        !_shouldSkipLine(lower) &&
+        !lower.contains('sp. z') &&
+        !lower.contains('s.a') &&
+        !lower.contains('ul.') &&
+        !RegExp(r'\d{4,}').hasMatch(candidate)) {
+      return _titleCase(candidate);
+    }
+  }
+  return null;
+}
+
+String _normalizeStoreCandidate(String value) {
+  return value
+      .toLowerCase()
+      .replaceAll('ą', 'a')
+      .replaceAll('ć', 'c')
+      .replaceAll('ę', 'e')
+      .replaceAll('ł', 'l')
+      .replaceAll('ń', 'n')
+      .replaceAll('ó', 'o')
+      .replaceAll('ś', 's')
+      .replaceAll('ż', 'z')
+      .replaceAll('ź', 'z');
+}
+
+String _titleCase(String value) {
+  return value
+      .split(' ')
+      .where((part) => part.isNotEmpty)
+      .map((part) {
+        if (part.length <= 2 && part == part.toUpperCase()) {
+          return part;
+        }
+        return part[0].toUpperCase() + part.substring(1).toLowerCase();
+      })
+      .join(' ');
+}
+
+bool _isProductName(String value) {
+  final name = value.trim();
+  if (name.length < 2) {
+    return false;
+  }
+  if (!RegExp(r'[A-Za-z]').hasMatch(name)) {
+    return false;
+  }
+  if (RegExp(r'^\d+$').hasMatch(name)) {
+    return false;
+  }
+  if (RegExp(r'\b\d{8,}\b').hasMatch(name)) {
+    return false;
+  }
+  return true;
 }
 
 bool _isTotalLine(String line) {
   return line.contains('suma') ||
       line.contains('razem') ||
-      line.contains('łącznie') ||
       line.contains('lacznie') ||
+      line.contains('do zaplaty') ||
       line.contains('do zapłaty') ||
-      line.contains('do zaplaty');
+      line.contains('naleznosc') ||
+      line.contains('należność');
 }
 
 bool _shouldSkipLine(String line) {
@@ -71,22 +183,25 @@ bool _shouldSkipLine(String line) {
     'paragon',
     'fiskalny',
     'nip',
-    'sprzedaż',
     'sprzedaz',
+    'sprzedaż',
     'podatek',
     'vat',
     'kasa',
     'kasjer',
     'terminal',
-    'płatność',
     'platnosc',
+    'płatność',
     'karta',
-    'gotówka',
     'gotowka',
+    'gotówka',
     'reszta',
     'data',
     'godz',
     'adres',
+    'nr wydruku',
+    'nr paragonu',
+    'numer',
     'www',
   ];
   return skipped.any((word) => line.contains(word));
