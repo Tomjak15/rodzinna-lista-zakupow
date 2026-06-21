@@ -75,6 +75,54 @@ void main() {
     expect(members, hasLength(1));
   });
 
+  test('wybiera konkretne istniejace konto po id czlonka', () async {
+    members.addAll([
+      {
+        'id': 'first-member',
+        'family_id': 'family-admin',
+        'name': 'Tomek',
+        'email': null,
+        'phone': null,
+        'avatar_url': null,
+        'created_at': '2026-06-20T10:00:00.000Z',
+        'updated_at': '2026-06-20T10:00:00.000Z',
+        'created_by': 'first-member',
+        'is_deleted': false,
+      },
+      {
+        'id': 'second-member',
+        'family_id': 'family-admin',
+        'name': 'Tomek',
+        'email': null,
+        'phone': null,
+        'avatar_url': null,
+        'created_at': '2026-06-20T10:00:00.000Z',
+        'updated_at': '2026-06-20T10:00:00.000Z',
+        'created_by': 'first-member',
+        'is_deleted': false,
+      },
+    ]);
+    final store = await LocalStore.create();
+    final appState = AppState(store: store);
+    addTearDown(appState.dispose);
+
+    await appState.updateServerUrl('http://127.0.0.1:${server.port}');
+    final familyMembers = await appState.fetchFamilyMembersForCode('ADMIN1');
+    final selectedMember = familyMembers.firstWhere(
+      (member) => member.id == 'second-member',
+    );
+    await appState.joinFamily(
+      code: 'ADMIN1',
+      memberName: 'Tomek',
+      existingMemberId: selectedMember.id,
+    );
+
+    expect(familyMembers.map((member) => member.id), contains('first-member'));
+    expect(familyMembers.map((member) => member.id), contains('second-member'));
+    expect(appState.data.currentMember?.id, 'second-member');
+    expect(members, hasLength(2));
+  });
+
   test('nie tworzy lokalnej rodziny, gdy kod nie istnieje', () async {
     final store = await LocalStore.create();
     final appState = AppState(store: store);

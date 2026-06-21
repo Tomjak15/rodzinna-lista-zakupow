@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app/app_scope.dart';
 import '../app/app_state.dart';
+import '../models/entities.dart';
 
 enum OnboardingMode { create, join }
 
@@ -13,6 +14,8 @@ class OnboardingScreen extends StatefulWidget {
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
+  static const _newMemberValue = '__new_member__';
+
   final _formKey = GlobalKey<FormState>();
   final _familyNameController = TextEditingController();
   final _codeController = TextEditingController();
@@ -20,8 +23,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _avatarController = TextEditingController();
+
   OnboardingMode _mode = OnboardingMode.create;
   bool _saving = false;
+  bool _loadingAccounts = false;
+  String? _selectedExistingMemberId;
+  String? _loadedFamilyCode;
+  String? _accountsMessage;
+  List<Member> _existingMembers = [];
 
   @override
   void dispose() {
@@ -36,6 +45,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final selectedExistingMember = _selectedExistingMember;
+    final usingExistingAccount = selectedExistingMember != null;
+
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -77,7 +89,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       ],
                       selected: {_mode},
                       onSelectionChanged: (value) {
-                        setState(() => _mode = value.first);
+                        setState(() {
+                          _mode = value.first;
+                          _clearExistingAccounts();
+                        });
                       },
                     ),
                     const SizedBox(height: 24),
@@ -94,7 +109,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             ? 'Wpisz nazwę rodziny'
                             : null,
                       )
-                    else
+                    else ...[
                       TextFormField(
                         controller: _codeController,
                         textCapitalization: TextCapitalization.characters,
@@ -103,18 +118,73 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           labelText: 'Kod rodziny',
                           prefixIcon: Icon(Icons.key_outlined),
                         ),
+                        onChanged: (_) => _clearExistingAccountsIfCodeChanged(),
                         validator: (value) =>
                             value == null || value.trim().isEmpty
                             ? 'Wpisz kod rodziny'
                             : null,
                       ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _loadingAccounts ? null : _loadAccounts,
+                        icon: _loadingAccounts
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.devices_other_outlined),
+                        label: const Text('Pokaż konta z tej rodziny'),
+                      ),
+                      if (_accountsMessage != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          _accountsMessage!,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                      if (_existingMembers.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          value: _selectedExistingMemberId ?? _newMemberValue,
+                          decoration: const InputDecoration(
+                            labelText: 'Konto na tym urządzeniu',
+                            prefixIcon: Icon(Icons.account_circle_outlined),
+                          ),
+                          items: [
+                            const DropdownMenuItem(
+                              value: _newMemberValue,
+                              child: Text('Nowe konto w rodzinie'),
+                            ),
+                            ..._existingMembers.map(
+                              (member) => DropdownMenuItem(
+                                value: member.id,
+                                child: Text(member.name),
+                              ),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedExistingMemberId =
+                                  value == _newMemberValue ? null : value;
+                              _fillSelectedMemberFields();
+                            });
+                          },
+                        ),
+                      ],
+                    ],
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _nameController,
+                      enabled: !usingExistingAccount,
                       textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Twoje imię',
-                        prefixIcon: Icon(Icons.person_outline),
+                        prefixIcon: const Icon(Icons.person_outline),
+                        helperText: usingExistingAccount
+                            ? 'Używasz istniejącego konta: ${selectedExistingMember.name}'
+                            : null,
                       ),
                       validator: (value) =>
                           value == null || value.trim().isEmpty
@@ -124,6 +194,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _emailController,
+                      enabled: !usingExistingAccount,
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(
@@ -134,6 +205,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _phoneController,
+                      enabled: !usingExistingAccount,
                       keyboardType: TextInputType.phone,
                       textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(
@@ -144,6 +216,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _avatarController,
+                      enabled: !usingExistingAccount,
                       textInputAction: TextInputAction.done,
                       decoration: const InputDecoration(
                         labelText: 'Avatar',
@@ -166,6 +239,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       label: Text(
                         _mode == OnboardingMode.create
                             ? 'Utwórz rodzinę'
+                            : usingExistingAccount
+                            ? 'Zaloguj to konto'
                             : 'Dołącz do rodziny',
                       ),
                     ),
@@ -177,6 +252,66 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ),
       ),
     );
+  }
+
+  Member? get _selectedExistingMember {
+    final selectedId = _selectedExistingMemberId;
+    if (selectedId == null) {
+      return null;
+    }
+    for (final member in _existingMembers) {
+      if (member.id == selectedId) {
+        return member;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _loadAccounts() async {
+    final code = _codeController.text.trim();
+    if (code.isEmpty) {
+      setState(() => _accountsMessage = 'Najpierw wpisz kod rodziny.');
+      return;
+    }
+
+    setState(() {
+      _loadingAccounts = true;
+      _accountsMessage = null;
+      _existingMembers = [];
+      _selectedExistingMemberId = null;
+    });
+
+    try {
+      final members = await AppScope.of(
+        context,
+      ).fetchFamilyMembersForCode(code);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _existingMembers = members;
+        _loadedFamilyCode = code.toUpperCase();
+        if (members.length == 1) {
+          _selectedExistingMemberId = members.single.id;
+          _fillSelectedMemberFields();
+        }
+        _accountsMessage = members.isEmpty
+            ? 'Nie ma jeszcze kont w tej rodzinie. Utworzysz nowe.'
+            : 'Wybierz swoje konto albo zostaw nowe konto.';
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      final message = error is AppActionException
+          ? error.message
+          : 'Nie udało się pobrać kont rodziny.';
+      setState(() => _accountsMessage = message);
+    } finally {
+      if (mounted) {
+        setState(() => _loadingAccounts = false);
+      }
+    }
   }
 
   Future<void> _submit() async {
@@ -201,6 +336,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           email: _emailController.text,
           phone: _phoneController.text,
           avatar: _avatarController.text,
+          existingMemberId: _selectedExistingMemberId,
         );
       }
     } catch (error) {
@@ -216,5 +352,30 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     if (mounted) {
       setState(() => _saving = false);
     }
+  }
+
+  void _clearExistingAccounts() {
+    _existingMembers = [];
+    _selectedExistingMemberId = null;
+    _loadedFamilyCode = null;
+    _accountsMessage = null;
+  }
+
+  void _clearExistingAccountsIfCodeChanged() {
+    final currentCode = _codeController.text.trim().toUpperCase();
+    if (_loadedFamilyCode != null && currentCode != _loadedFamilyCode) {
+      setState(_clearExistingAccounts);
+    }
+  }
+
+  void _fillSelectedMemberFields() {
+    final member = _selectedExistingMember;
+    if (member == null) {
+      return;
+    }
+    _nameController.text = member.name;
+    _emailController.text = member.email ?? '';
+    _phoneController.text = member.phone ?? '';
+    _avatarController.text = member.avatar ?? '';
   }
 }

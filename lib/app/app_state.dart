@@ -198,6 +198,7 @@ class AppState extends ChangeNotifier {
     String? email,
     String? phone,
     String? avatar,
+    String? existingMemberId,
   }) async {
     final syncService = _syncService;
     if (syncService == null) {
@@ -234,6 +235,7 @@ class AppState extends ChangeNotifier {
       memberName: memberName,
       email: email,
       phone: phone,
+      existingMemberId: existingMemberId,
     );
     if (existingMember != null) {
       final draftData = AppData.empty().copyWith(
@@ -288,6 +290,37 @@ class AppState extends ChangeNotifier {
     } catch (error) {
       throw AppActionException('Nie udało się dołączyć do rodziny: $error');
     }
+  }
+
+  Future<List<Member>> fetchFamilyMembersForCode(String code) async {
+    final syncService = _syncService;
+    if (syncService == null) {
+      throw const AppActionException(
+        'Najpierw wpisz adres serwera w ustawieniach.',
+      );
+    }
+    if (!_online) {
+      throw const AppActionException('Pobranie kont rodziny wymaga internetu.');
+    }
+
+    final normalizedCode = code.trim().toUpperCase();
+    if (normalizedCode.isEmpty) {
+      throw const AppActionException('Wpisz kod rodziny.');
+    }
+
+    Family? remoteFamily;
+    try {
+      remoteFamily = await syncService.findFamilyByCode(normalizedCode);
+    } catch (error) {
+      throw AppActionException('Nie udało się sprawdzić kodu rodziny: $error');
+    }
+    if (remoteFamily == null) {
+      throw const AppActionException('Nie znaleziono rodziny z takim kodem.');
+    }
+
+    final members = await syncService.fetchMembers(remoteFamily.id);
+    return members.where((member) => !member.isDeleted).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
   }
 
   Future<void> addCalendarMember({required String name}) async {
@@ -1727,10 +1760,20 @@ class AppState extends ChangeNotifier {
     required String memberName,
     String? email,
     String? phone,
+    String? existingMemberId,
   }) {
     final cleanEmail = nullableString(email)?.toLowerCase();
     final cleanPhone = nullableString(phone)?.replaceAll(RegExp(r'\s+'), '');
     final cleanName = normalizeName(memberName);
+    final cleanMemberId = nullableString(existingMemberId);
+
+    if (cleanMemberId != null) {
+      for (final member in members.where((member) => !member.isDeleted)) {
+        if (member.id == cleanMemberId) {
+          return member;
+        }
+      }
+    }
 
     for (final member in members.where((member) => !member.isDeleted)) {
       if (cleanEmail != null && member.email?.toLowerCase() == cleanEmail) {
