@@ -41,6 +41,9 @@ class AppState extends ChangeNotifier {
   static const defaultRecipeCategory = 'Obiady';
   static const _legacyBrokenServerUrls = {
     'https://rodzinna-lista-zakupow--tomjak15.replit.app',
+    'https://breezy-rivers-remain.loca.lt',
+    'https://travel-authentication-measured-income.trycloudflare.com',
+    'https://create-anonymous-nickel-researchers.trycloudflare.com',
   };
 
   final LocalStore _store;
@@ -84,15 +87,20 @@ class AppState extends ChangeNotifier {
     _data = await _store.loadAll();
     final storedServerUrl = _normalizeServerUrl(_store.loadServerUrl() ?? '');
     _serverUrl = _normalizeServerUrl(
-      storedServerUrl.isEmpty ||
-              _legacyBrokenServerUrls.contains(storedServerUrl)
+      storedServerUrl.isEmpty || _isLegacyBrokenServerUrl(storedServerUrl)
           ? BackendConfig.normalizedServerUrl
           : storedServerUrl,
     );
     if (storedServerUrl.isNotEmpty &&
         storedServerUrl != _serverUrl &&
-        _legacyBrokenServerUrls.contains(storedServerUrl)) {
+        _isLegacyBrokenServerUrl(storedServerUrl)) {
       await _store.saveServerUrl(_serverUrl);
+    }
+    final dataServerUrl = _normalizeServerUrl(_store.loadDataServerUrl() ?? '');
+    if (_shouldResyncAfterServerChange(dataServerUrl)) {
+      _data = _dataMarkedPendingForServerChange(_data);
+      await _store.saveAll(_data);
+      await _store.saveDataServerUrl(_serverUrl);
     }
     _rebuildSyncService();
     _lastSyncAt = _store.loadLastSyncAt();
@@ -227,7 +235,10 @@ class AppState extends ChangeNotifier {
       syncStatus: SyncStatus.pending,
     );
     final draftData = AppData.empty().copyWith(
-      family: remoteFamily.copyWith(syncStatus: SyncStatus.synced),
+      family: remoteFamily.copyWith(
+        syncStatus: SyncStatus.synced,
+        createOnSync: false,
+      ),
       currentMember: member,
       members: [member],
     );
@@ -1249,6 +1260,9 @@ class AppState extends ChangeNotifier {
       _lastSyncAt = DateTime.now();
       await _store.saveAll(_data);
       await _store.saveLastSyncAt(_lastSyncAt!);
+      if (_data.family?.syncStatus == SyncStatus.synced) {
+        await _store.saveDataServerUrl(_serverUrl);
+      }
     } catch (error) {
       _lastSyncError = error.toString();
     } finally {
@@ -1263,11 +1277,21 @@ class AppState extends ChangeNotifier {
     _lastSyncError = null;
     await _store.saveAll(_data);
     await _store.saveLastSyncAt(_lastSyncAt!);
+    if (_data.family?.syncStatus == SyncStatus.synced) {
+      await _store.saveDataServerUrl(_serverUrl);
+    }
     notifyListeners();
   }
 
   Future<void> updateServerUrl(String value) async {
-    _serverUrl = _normalizeServerUrl(value);
+    final nextServerUrl = _normalizeServerUrl(value);
+    final serverChanged = nextServerUrl != _serverUrl;
+    _serverUrl = nextServerUrl;
+    if (serverChanged && _data.family != null) {
+      _data = _dataMarkedPendingForServerChange(_data);
+      await _store.saveAll(_data);
+      await _store.saveDataServerUrl(_serverUrl);
+    }
     _rebuildSyncService();
     _lastSyncError = null;
     await _store.saveServerUrl(_serverUrl);
@@ -1424,6 +1448,59 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  AppData _dataMarkedPendingForServerChange(AppData data) {
+    final familyCreator =
+        data.family != null &&
+        data.currentMember != null &&
+        data.family!.createdBy == data.currentMember!.id;
+
+    return data.copyWith(
+      family: data.family?.copyWith(
+        syncStatus: SyncStatus.pending,
+        createOnSync: familyCreator,
+      ),
+      currentMember: data.currentMember?.copyWith(
+        syncStatus: SyncStatus.pending,
+      ),
+      members: data.members
+          .map((item) => item.copyWith(syncStatus: SyncStatus.pending))
+          .toList(),
+      shoppingItems: data.shoppingItems
+          .map((item) => item.copyWith(syncStatus: SyncStatus.pending))
+          .toList(),
+      meals: data.meals
+          .map((item) => item.copyWith(syncStatus: SyncStatus.pending))
+          .toList(),
+      recipes: data.recipes
+          .map((item) => item.copyWith(syncStatus: SyncStatus.pending))
+          .toList(),
+      recipeIngredients: data.recipeIngredients
+          .map((item) => item.copyWith(syncStatus: SyncStatus.pending))
+          .toList(),
+      mealPlans: data.mealPlans
+          .map((item) => item.copyWith(syncStatus: SyncStatus.pending))
+          .toList(),
+      calendarEvents: data.calendarEvents
+          .map((item) => item.copyWith(syncStatus: SyncStatus.pending))
+          .toList(),
+      nutritionGoals: data.nutritionGoals
+          .map((item) => item.copyWith(syncStatus: SyncStatus.pending))
+          .toList(),
+      nutritionEntries: data.nutritionEntries
+          .map((item) => item.copyWith(syncStatus: SyncStatus.pending))
+          .toList(),
+      trainingEntries: data.trainingEntries
+          .map((item) => item.copyWith(syncStatus: SyncStatus.pending))
+          .toList(),
+      favoriteProducts: data.favoriteProducts
+          .map((item) => item.copyWith(syncStatus: SyncStatus.pending))
+          .toList(),
+      receipts: data.receipts
+          .map((item) => item.copyWith(syncStatus: SyncStatus.pending))
+          .toList(),
+    );
+  }
+
   List<RecipeIngredient> _ingredientEntities(
     String recipeId,
     List<IngredientDraft> ingredients,
@@ -1544,6 +1621,16 @@ class AppState extends ChangeNotifier {
       return trimmed.substring(0, trimmed.length - 1);
     }
     return trimmed;
+  }
+
+  bool _isLegacyBrokenServerUrl(String value) {
+    return _legacyBrokenServerUrls.contains(value.toLowerCase());
+  }
+
+  bool _shouldResyncAfterServerChange(String dataServerUrl) {
+    return _data.family != null &&
+        _serverUrl.startsWith('http') &&
+        dataServerUrl != _serverUrl;
   }
 
   String _generateFamilyCode() {

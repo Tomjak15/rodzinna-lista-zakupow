@@ -11,6 +11,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late HttpServer server;
+  late List<Map<String, dynamic>> families;
   late List<Map<String, dynamic>> members;
   late HttpOverrides? previousHttpOverrides;
 
@@ -18,9 +19,12 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     previousHttpOverrides = HttpOverrides.current;
     HttpOverrides.global = null;
+    families = [];
     members = [];
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    unawaited(server.forEach((request) => _handleRequest(request, members)));
+    unawaited(
+      server.forEach((request) => _handleRequest(request, families, members)),
+    );
   });
 
   tearDown(() async {
@@ -39,6 +43,7 @@ void main() {
     expect(appState.hasFamily, isTrue);
     expect(appState.data.family?.id, 'family-admin');
     expect(appState.data.family?.code, 'ADMIN1');
+    expect(appState.data.family?.createOnSync, isFalse);
     expect(appState.data.currentMember?.familyId, 'family-admin');
     expect(appState.data.currentMember?.syncStatus.name, 'synced');
     expect(members, hasLength(1));
@@ -59,10 +64,29 @@ void main() {
     expect(appState.hasFamily, isFalse);
     expect(members, isEmpty);
   });
+
+  test('zmiana serwera wymusza ponowna synchronizacje rodziny', () async {
+    final store = await LocalStore.create();
+    final appState = AppState(store: store);
+    addTearDown(appState.dispose);
+
+    await appState.updateServerUrl('http://127.0.0.1:${server.port}');
+    await appState.createFamily(familyName: 'Dom', memberName: 'Tomek');
+
+    expect(appState.data.family?.syncStatus.name, 'synced');
+    expect(appState.data.members.single.syncStatus.name, 'synced');
+
+    await appState.updateServerUrl('bez-serwera-test');
+
+    expect(appState.data.family?.syncStatus.name, 'pending');
+    expect(appState.data.family?.createOnSync, isTrue);
+    expect(appState.data.members.single.syncStatus.name, 'pending');
+  });
 }
 
 Future<void> _handleRequest(
   HttpRequest request,
+  List<Map<String, dynamic>> families,
   List<Map<String, dynamic>> members,
 ) async {
   final path = request.uri.path;
@@ -82,6 +106,15 @@ Future<void> _handleRequest(
 
   if (request.method == 'GET' && path.startsWith('/api/families/code/')) {
     _sendJson(request, {'error': 'Nie znaleziono'}, statusCode: 404);
+    return;
+  }
+
+  if (request.method == 'PUT' && path.startsWith('/api/families/')) {
+    final body = await utf8.decoder.bind(request).join();
+    final family = Map<String, dynamic>.from(jsonDecode(body) as Map);
+    families.removeWhere((item) => item['id'] == family['id']);
+    families.add(family);
+    _sendJson(request, family);
     return;
   }
 

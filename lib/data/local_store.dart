@@ -23,6 +23,7 @@ class LocalStore {
   static const _receiptsKey = 'receipts';
   static const _lastSyncKey = 'lastSyncAt';
   static const _serverUrlKey = 'serverUrl';
+  static const _dataServerUrlKey = 'dataServerUrl';
 
   final SharedPreferences _prefs;
 
@@ -111,12 +112,24 @@ class LocalStore {
     return nullableString(_prefs.getString(_serverUrlKey));
   }
 
+  String? loadDataServerUrl() {
+    return nullableString(_prefs.getString(_dataServerUrlKey));
+  }
+
   Future<void> saveServerUrl(String? value) {
     final cleanValue = nullableString(value);
     if (cleanValue == null) {
       return _prefs.remove(_serverUrlKey);
     }
     return _prefs.setString(_serverUrlKey, cleanValue);
+  }
+
+  Future<void> saveDataServerUrl(String? value) {
+    final cleanValue = nullableString(value);
+    if (cleanValue == null) {
+      return _prefs.remove(_dataServerUrlKey);
+    }
+    return _prefs.setString(_dataServerUrlKey, cleanValue);
   }
 
   Future<void> saveLastSyncAt(DateTime value) {
@@ -141,6 +154,7 @@ class LocalStore {
       _prefs.remove(_receiptsKey),
       _prefs.remove(_lastSyncKey),
       _prefs.remove(_serverUrlKey),
+      _prefs.remove(_dataServerUrlKey),
     ]);
   }
 
