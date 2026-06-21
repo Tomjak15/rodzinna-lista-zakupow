@@ -183,7 +183,10 @@ class _ReceiptTile extends StatelessWidget {
           if (receipt.imageData != null) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: _ReceiptPhotoPreview(imageData: receipt.imageData),
+              child: _ReceiptPhotoPreview(
+                imageData: receipt.imageData,
+                onTap: () => _showReceiptPhoto(context, receipt),
+              ),
             ),
           ],
           Padding(
@@ -211,6 +214,13 @@ class _ReceiptTile extends StatelessWidget {
             ),
           OverflowBar(
             children: [
+              TextButton.icon(
+                onPressed: receipt.imageData == null
+                    ? null
+                    : () => _showReceiptPhoto(context, receipt),
+                icon: const Icon(Icons.image_outlined),
+                label: const Text('Zdjęcie'),
+              ),
               TextButton.icon(
                 onPressed: receipt.items.isEmpty
                     ? null
@@ -578,15 +588,16 @@ class _ReceiptEditorSheetState extends State<_ReceiptEditorSheet> {
 }
 
 class _ReceiptPhotoPreview extends StatelessWidget {
-  const _ReceiptPhotoPreview({required this.imageData});
+  const _ReceiptPhotoPreview({required this.imageData, this.onTap});
 
   final String? imageData;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final bytes = _decodeReceiptImage(imageData);
     final scheme = Theme.of(context).colorScheme;
-    return ClipRRect(
+    final preview = ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Container(
         width: double.infinity,
@@ -605,6 +616,35 @@ class _ReceiptPhotoPreview extends StatelessWidget {
                   child: Center(child: Icon(Icons.broken_image_outlined)),
                 ),
               ),
+      ),
+    );
+    if (onTap == null || bytes == null) {
+      return preview;
+    }
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Stack(
+          children: [
+            preview,
+            Positioned(
+              right: 8,
+              bottom: 8,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: scheme.surface.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Icon(Icons.zoom_out_map, size: 18),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -56,4 +56,60 @@ KARTA 17,78
     expect(parsed.items.map((item) => item.name), contains('Chleb Wiejski'));
     expect(parsed.items.any((item) => item.name.contains('Banan')), isTrue);
   });
+
+  test('parser paragonu czyta sume zapisana ze spacja', () {
+    final parsed = parseReceiptText('''
+ŻABKA
+PARAGON FISKALNY
+HOT DOG 1 szt 8 99 A
+NAPOJ COLA 500 ml 6 50 B
+DO ZAPŁATY
+15 49
+KARTA 15 49
+''');
+
+    expect(parsed.storeName, 'Żabka');
+    expect(parsed.total, 15.49);
+    expect(parsed.items.map((item) => item.name), contains('Hot Dog'));
+    expect(parsed.items.map((item) => item.name), contains('Napoj Cola'));
+  });
+
+  test('parser paragonu czyta produkt rozbity na nazwe i cene', () {
+    final parsed = parseReceiptText('''
+LIDL
+CHLEB ŻYTNI
+1 szt x 5,99 5,99 A
+MASŁO EXTRA
+1 x 7,99 A
+RAZEM PLN 13,98
+''');
+
+    expect(parsed.items.map((item) => item.name), contains('Chleb Żytni'));
+    expect(parsed.items.map((item) => item.name), contains('Masło Extra'));
+    expect(
+      parsed.items.firstWhere((item) => item.name == 'Chleb Żytni').price,
+      5.99,
+    );
+    expect(parsed.total, 13.98);
+  });
+
+  test('parser paragonu czyta produkty wazone z cena za kg', () {
+    final parsed = parseReceiptText('''
+BIEDRONKA
+BANAN 0,456 kg x 4,99 2,28 A
+POMIDOR 0,354 KG 8,99/kg 3,18 B
+SUMA PLN 5,46
+''');
+
+    final banana = parsed.items.firstWhere((item) => item.name == 'Banan');
+    final tomato = parsed.items.firstWhere((item) => item.name == 'Pomidor');
+
+    expect(banana.quantity, 0.456);
+    expect(banana.unit, 'kg');
+    expect(banana.price, 2.28);
+    expect(tomato.quantity, 0.354);
+    expect(tomato.unit, 'kg');
+    expect(tomato.price, 3.18);
+    expect(parsed.total, 5.46);
+  });
 }

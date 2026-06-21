@@ -37,8 +37,8 @@ Future<ReceiptScanResult?> scanReceiptFromCamera() async {
   final picker = ImagePicker();
   final image = await picker.pickImage(
     source: ImageSource.camera,
-    imageQuality: 85,
-    maxWidth: 1800,
+    imageQuality: 95,
+    maxWidth: 2400,
   );
   if (image == null) {
     return null;
