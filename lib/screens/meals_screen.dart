@@ -107,7 +107,7 @@ class _MealTile extends StatelessWidget {
         subtitle: mainRecipe == null
             ? const Text('Brak przepisu gĹ‚Ăłwnego')
             : Text(
-                '${mainRecipe.category} - ${mainRecipe.baseServings} porcje bazowe - ${subRecipes.length} dodatków',
+                '${mainRecipe.category} - ${mainRecipe.baseServings} porcje bazowe - ${_recipeNutritionText(mainRecipe)} - ${subRecipes.length} dodatków',
               ),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
@@ -204,6 +204,13 @@ class _RecipeDetails extends StatelessWidget {
           'Autor: ${appState.memberById(recipe.createdBy)?.name ?? 'Rodzina'} - ${recipe.category}',
           style: Theme.of(context).textTheme.labelMedium,
         ),
+        if (recipe.caloriesPerServing > 0 || recipe.proteinPerServing > 0) ...[
+          const SizedBox(height: 6),
+          Text(
+            _recipeNutritionText(recipe),
+            style: Theme.of(context).textTheme.labelLarge,
+          ),
+        ],
         const SizedBox(height: 8),
         Wrap(
           spacing: 6,
@@ -260,7 +267,7 @@ class _SubRecipeRow extends StatelessWidget {
       leading: const Icon(Icons.rice_bowl_outlined),
       title: Text(recipe.name),
       subtitle: Text(
-        '${recipe.category} - ${recipe.baseServings} porcje bazowe - $ingredientCount składników',
+        '${recipe.category} - ${recipe.baseServings} porcje bazowe - ${_recipeNutritionText(recipe)} - $ingredientCount składników',
       ),
       trailing: Wrap(
         spacing: 2,
@@ -343,6 +350,8 @@ class _RecipeDraft {
     required this.category,
     required this.instructions,
     required this.baseServings,
+    required this.caloriesPerServing,
+    required this.proteinPerServing,
     required this.ingredients,
   });
 
@@ -350,6 +359,8 @@ class _RecipeDraft {
   final String category;
   final String instructions;
   final int baseServings;
+  final int caloriesPerServing;
+  final double proteinPerServing;
   final List<IngredientDraft> ingredients;
 }
 
@@ -374,6 +385,8 @@ class _RecipeDialogState extends State<_RecipeDialog> {
   late String _category;
   late final TextEditingController _instructionsController;
   late final TextEditingController _servingsController;
+  late final TextEditingController _caloriesController;
+  late final TextEditingController _proteinController;
   late final List<_IngredientLineController> _ingredientLines;
 
   @override
@@ -390,6 +403,14 @@ class _RecipeDialogState extends State<_RecipeDialog> {
     _servingsController = TextEditingController(
       text: recipe?.baseServings.toString() ?? '4',
     );
+    _caloriesController = TextEditingController(
+      text: recipe?.caloriesPerServing.toString() ?? '',
+    );
+    _proteinController = TextEditingController(
+      text: recipe == null || recipe.proteinPerServing == 0
+          ? ''
+          : formatQuantity(recipe.proteinPerServing),
+    );
     final initialIngredients = widget.initialIngredients ?? const [];
     _ingredientLines = initialIngredients.isEmpty
         ? [_IngredientLineController()]
@@ -403,6 +424,8 @@ class _RecipeDialogState extends State<_RecipeDialog> {
     _nameController.dispose();
     _instructionsController.dispose();
     _servingsController.dispose();
+    _caloriesController.dispose();
+    _proteinController.dispose();
     for (final line in _ingredientLines) {
       line.dispose();
     }
@@ -456,6 +479,34 @@ class _RecipeDialogState extends State<_RecipeDialog> {
                     final parsed = int.tryParse(value ?? '') ?? 0;
                     return parsed <= 0 ? 'Podaj liczbÄ™ porcji' : null;
                   },
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _caloriesController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Kcal na porcję',
+                          suffixText: 'kcal',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _proteinController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Białko na porcję',
+                          suffixText: 'g',
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
@@ -525,6 +576,8 @@ class _RecipeDialogState extends State<_RecipeDialog> {
         category: _category,
         instructions: _instructionsController.text.trim(),
         baseServings: max(1, int.tryParse(_servingsController.text) ?? 1),
+        caloriesPerServing: _parseInt(_caloriesController.text),
+        proteinPerServing: _parseDouble(_proteinController.text),
         ingredients: ingredients,
       ),
     );
@@ -836,6 +889,8 @@ Future<void> _openMealDialog(BuildContext context) async {
     category: draft.category,
     instructions: draft.instructions,
     baseServings: draft.baseServings,
+    caloriesPerServing: draft.caloriesPerServing,
+    proteinPerServing: draft.proteinPerServing,
     ingredients: draft.ingredients,
   );
 }
@@ -871,6 +926,8 @@ Future<void> _openRecipeDialog(
     category: draft.category,
     instructions: draft.instructions,
     baseServings: draft.baseServings,
+    caloriesPerServing: draft.caloriesPerServing,
+    proteinPerServing: draft.proteinPerServing,
     ingredients: draft.ingredients,
   );
 }
@@ -894,6 +951,8 @@ Future<void> _openSubRecipeDialog(
     category: draft.category,
     instructions: draft.instructions,
     baseServings: draft.baseServings,
+    caloriesPerServing: draft.caloriesPerServing,
+    proteinPerServing: draft.proteinPerServing,
     ingredients: draft.ingredients,
   );
 }
@@ -946,3 +1005,15 @@ Future<void> _confirmDeleteMeal(BuildContext context, Meal meal) async {
 }
 
 const recipeCategoryNames = ['Wszystkie', ...AppState.recipeOwnerCategories];
+
+String _recipeNutritionText(Recipe recipe) {
+  return '${recipe.caloriesPerServing} kcal / ${formatQuantity(recipe.proteinPerServing)} g białka na porcję';
+}
+
+int _parseInt(String value) {
+  return int.tryParse(value.trim().replaceAll(',', '.')) ?? 0;
+}
+
+double _parseDouble(String value) {
+  return double.tryParse(value.trim().replaceAll(',', '.')) ?? 0;
+}

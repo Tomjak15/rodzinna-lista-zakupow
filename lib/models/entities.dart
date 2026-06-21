@@ -729,6 +729,8 @@ class Recipe {
     required this.category,
     required this.instructions,
     required this.baseServings,
+    required this.caloriesPerServing,
+    required this.proteinPerServing,
     required this.createdAt,
     required this.updatedAt,
     required this.createdBy,
@@ -751,6 +753,12 @@ class Recipe {
           'Tomek',
       instructions: json['instructions']?.toString() ?? '',
       baseServings: intFromJson(json['baseServings'] ?? json['base_servings']),
+      caloriesPerServing: intFromJson(
+        json['caloriesPerServing'] ?? json['calories_per_serving'],
+      ),
+      proteinPerServing: doubleFromJson(
+        json['proteinPerServing'] ?? json['protein_per_serving'],
+      ),
       createdAt: dateFromJson(json['createdAt'] ?? json['created_at']),
       updatedAt: dateFromJson(json['updatedAt'] ?? json['updated_at']),
       createdBy:
@@ -770,6 +778,8 @@ class Recipe {
       category: json['recipe_category']?.toString() ?? 'Tomek',
       instructions: json['instructions']?.toString() ?? '',
       baseServings: intFromJson(json['base_servings']),
+      caloriesPerServing: intFromJson(json['calories_per_serving']),
+      proteinPerServing: doubleFromJson(json['protein_per_serving']),
       createdAt: dateFromJson(json['created_at']),
       updatedAt: dateFromJson(json['updated_at']),
       createdBy: json['created_by']?.toString() ?? '',
@@ -786,6 +796,8 @@ class Recipe {
   final String category;
   final String instructions;
   final int baseServings;
+  final int caloriesPerServing;
+  final double proteinPerServing;
   final DateTime createdAt;
   final DateTime updatedAt;
   final String createdBy;
@@ -804,6 +816,8 @@ class Recipe {
       'category': category,
       'instructions': instructions,
       'baseServings': baseServings,
+      'caloriesPerServing': caloriesPerServing,
+      'proteinPerServing': proteinPerServing,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'createdBy': createdBy,
@@ -822,6 +836,8 @@ class Recipe {
       'recipe_category': category,
       'instructions': instructions,
       'base_servings': baseServings,
+      'calories_per_serving': caloriesPerServing,
+      'protein_per_serving': proteinPerServing,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
       'created_by': createdBy,
@@ -838,6 +854,8 @@ class Recipe {
     String? category,
     String? instructions,
     int? baseServings,
+    int? caloriesPerServing,
+    double? proteinPerServing,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? createdBy,
@@ -853,6 +871,8 @@ class Recipe {
       category: category ?? this.category,
       instructions: instructions ?? this.instructions,
       baseServings: baseServings ?? this.baseServings,
+      caloriesPerServing: caloriesPerServing ?? this.caloriesPerServing,
+      proteinPerServing: proteinPerServing ?? this.proteinPerServing,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       createdBy: createdBy ?? this.createdBy,

@@ -74,6 +74,8 @@ void main() {
       category: 'Anna',
       instructions: 'Usmaz.',
       baseServings: 4,
+      caloriesPerServing: 500,
+      proteinPerServing: 35,
       ingredients: const [
         IngredientDraft(name: 'Kurczak', quantity: 500, unit: 'g'),
       ],
@@ -81,11 +83,49 @@ void main() {
 
     final recipe = appState.data.activeRecipes.single;
     expect(recipe.category, 'Anna');
+    expect(recipe.caloriesPerServing, 500);
+    expect(recipe.proteinPerServing, 35);
+    expect(recipe.toRemote()['calories_per_serving'], 500);
+    expect(recipe.toRemote()['protein_per_serving'], 35);
 
     await appState.updateRecipeCategory(recipe: recipe, category: 'Kaja');
 
     final moved = appState.data.activeRecipes.single;
     expect(moved.category, 'Kaja');
     expect(moved.toRemote()['recipe_category'], 'Kaja');
+  });
+
+  test('zdrowie liczy kcal i bialko z procentu porcji przepisu', () async {
+    final store = await LocalStore.create();
+    final appState = AppState(store: store);
+    addTearDown(appState.dispose);
+
+    await appState.createFamily(familyName: 'Dom', memberName: 'Tomek');
+    await appState.addMealWithRecipe(
+      mealName: 'Kurczak z ryzem',
+      category: 'Tomek',
+      instructions: 'Ugotuj.',
+      baseServings: 2,
+      caloriesPerServing: 500,
+      proteinPerServing: 35,
+      ingredients: const [
+        IngredientDraft(name: 'Kurczak', quantity: 200, unit: 'g'),
+        IngredientDraft(name: 'Ryz', quantity: 100, unit: 'g'),
+      ],
+    );
+
+    final recipe = appState.data.activeRecipes.single;
+    await appState.addNutritionEntryFromRecipe(
+      date: DateTime(2026, 6, 21),
+      recipe: recipe,
+      servingPercent: 80,
+    );
+
+    final entry = appState
+        .nutritionEntriesForDate(DateTime(2026, 6, 21))
+        .single;
+    expect(entry.calories, 400);
+    expect(entry.protein, 28);
+    expect(entry.note, 'Kurczak z ryzem (80% porcji)');
   });
 }

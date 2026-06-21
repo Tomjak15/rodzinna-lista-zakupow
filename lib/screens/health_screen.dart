@@ -143,14 +143,32 @@ class _HealthScreenState extends State<HealthScreen> {
   }
 
   Future<void> _openNutritionDialog() async {
+    final recipes =
+        AppScope.of(context).data.activeRecipes
+            .where(
+              (recipe) =>
+                  recipe.caloriesPerServing > 0 || recipe.proteinPerServing > 0,
+            )
+            .toList()
+          ..sort((a, b) => a.name.compareTo(b.name));
     final draft = await showDialog<_NutritionEntryDraft>(
       context: context,
-      builder: (_) => _NutritionEntryDialog(date: _selectedDate),
+      builder: (_) =>
+          _NutritionEntryDialog(date: _selectedDate, recipes: recipes),
     );
     if (draft == null || !mounted) {
       return;
     }
-    await AppScope.of(context).addNutritionEntry(
+    final appState = AppScope.of(context);
+    if (draft.recipe != null && draft.servingPercent != null) {
+      await appState.addNutritionEntryFromRecipe(
+        date: _selectedDate,
+        recipe: draft.recipe!,
+        servingPercent: draft.servingPercent!,
+      );
+      return;
+    }
+    await appState.addNutritionEntry(
       date: _selectedDate,
       calories: draft.calories,
       protein: draft.protein,
@@ -711,9 +729,10 @@ class _NutritionGoalDialogState extends State<_NutritionGoalDialog> {
 }
 
 class _NutritionEntryDialog extends StatefulWidget {
-  const _NutritionEntryDialog({required this.date});
+  const _NutritionEntryDialog({required this.date, required this.recipes});
 
   final DateTime date;
+  final List<Recipe> recipes;
 
   @override
   State<_NutritionEntryDialog> createState() => _NutritionEntryDialogState();
@@ -723,13 +742,28 @@ class _NutritionEntryDialogState extends State<_NutritionEntryDialog> {
   final _caloriesController = TextEditingController();
   final _proteinController = TextEditingController();
   final _noteController = TextEditingController();
+  final _percentController = TextEditingController(text: '100');
+  int _mode = 0;
+  String? _recipeId;
 
   @override
   void dispose() {
     _caloriesController.dispose();
     _proteinController.dispose();
     _noteController.dispose();
+    _percentController.dispose();
     super.dispose();
+  }
+
+  Recipe? get _selectedRecipe {
+    if (widget.recipes.isEmpty) {
+      return null;
+    }
+    final id = _recipeId ?? widget.recipes.first.id;
+    return widget.recipes.firstWhere(
+      (recipe) => recipe.id == id,
+      orElse: () => widget.recipes.first,
+    );
   }
 
   @override
@@ -739,29 +773,61 @@ class _NutritionEntryDialogState extends State<_NutritionEntryDialog> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(
-            controller: _caloriesController,
-            autofocus: true,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Kcal',
-              suffixText: 'kcal',
+          if (widget.recipes.isNotEmpty) ...[
+            SegmentedButton<int>(
+              segments: const [
+                ButtonSegment(
+                  value: 0,
+                  icon: Icon(Icons.edit_outlined),
+                  label: Text('Ręcznie'),
+                ),
+                ButtonSegment(
+                  value: 1,
+                  icon: Icon(Icons.restaurant_menu),
+                  label: Text('Z przepisu'),
+                ),
+              ],
+              selected: {_mode},
+              onSelectionChanged: (value) =>
+                  setState(() => _mode = value.first),
             ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _proteinController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Białko',
-              suffixText: 'g',
+            const SizedBox(height: 12),
+          ],
+          if (_mode == 1 && widget.recipes.isNotEmpty)
+            _RecipeNutritionPicker(
+              recipes: widget.recipes,
+              selectedRecipe: _selectedRecipe!,
+              percentController: _percentController,
+              onRecipeChanged: (id) => setState(() => _recipeId = id),
+              onPercentChanged: () => setState(() {}),
+            )
+          else ...[
+            TextField(
+              controller: _caloriesController,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Kcal',
+                suffixText: 'kcal',
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _noteController,
-            decoration: const InputDecoration(labelText: 'Opis'),
-          ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _proteinController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Białko',
+                suffixText: 'g',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _noteController,
+              decoration: const InputDecoration(labelText: 'Opis'),
+            ),
+          ],
         ],
       ),
       actions: [
@@ -775,6 +841,21 @@ class _NutritionEntryDialogState extends State<_NutritionEntryDialog> {
   }
 
   void _save() {
+    if (_mode == 1 && widget.recipes.isNotEmpty) {
+      final recipe = _selectedRecipe!;
+      final percent = max(0.0, _parseDouble(_percentController.text));
+      Navigator.pop(
+        context,
+        _NutritionEntryDraft(
+          calories: 0,
+          protein: 0,
+          note: '',
+          recipe: recipe,
+          servingPercent: percent,
+        ),
+      );
+      return;
+    }
     Navigator.pop(
       context,
       _NutritionEntryDraft(
@@ -782,6 +863,75 @@ class _NutritionEntryDialogState extends State<_NutritionEntryDialog> {
         protein: _parseDouble(_proteinController.text),
         note: _noteController.text.trim(),
       ),
+    );
+  }
+}
+
+class _RecipeNutritionPicker extends StatelessWidget {
+  const _RecipeNutritionPicker({
+    required this.recipes,
+    required this.selectedRecipe,
+    required this.percentController,
+    required this.onRecipeChanged,
+    required this.onPercentChanged,
+  });
+
+  final List<Recipe> recipes;
+  final Recipe selectedRecipe;
+  final TextEditingController percentController;
+  final ValueChanged<String> onRecipeChanged;
+  final VoidCallback onPercentChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = max(0.0, _parseDouble(percentController.text));
+    final multiplier = percent / 100;
+    final calories = (selectedRecipe.caloriesPerServing * multiplier).round();
+    final protein = selectedRecipe.proteinPerServing * multiplier;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        DropdownButtonFormField<String>(
+          value: selectedRecipe.id,
+          decoration: const InputDecoration(
+            labelText: 'Co zjadłeś',
+            prefixIcon: Icon(Icons.restaurant_menu),
+          ),
+          items: recipes
+              .map(
+                (recipe) => DropdownMenuItem(
+                  value: recipe.id,
+                  child: Text(recipe.name),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            if (value != null) {
+              onRecipeChanged(value);
+            }
+          },
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: percentController,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: 'Ile z 1 porcji',
+            suffixText: '%',
+          ),
+          onChanged: (_) => onPercentChanged(),
+        ),
+        const SizedBox(height: 12),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.calculate_outlined),
+          title: Text('$calories kcal, ${_number(protein)} g białka'),
+          subtitle: Text(
+            '${selectedRecipe.caloriesPerServing} kcal i ${_number(selectedRecipe.proteinPerServing)} g białka na 1 porcję',
+          ),
+        ),
+      ],
     );
   }
 }
@@ -874,11 +1024,15 @@ class _NutritionEntryDraft {
     required this.calories,
     required this.protein,
     required this.note,
+    this.recipe,
+    this.servingPercent,
   });
 
   final int calories;
   final double protein;
   final String note;
+  final Recipe? recipe;
+  final double? servingPercent;
 }
 
 class _TrainingEntryDraft {

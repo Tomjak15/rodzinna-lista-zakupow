@@ -89,13 +89,19 @@ const tables = {
       "recipe_category",
       "instructions",
       "base_servings",
+      "calories_per_serving",
+      "protein_per_serving",
       "created_at",
       "updated_at",
       "created_by",
       "is_deleted",
     ],
     boolColumns: ["is_deleted"],
-    numberColumns: ["base_servings"],
+    numberColumns: [
+      "base_servings",
+      "calories_per_serving",
+      "protein_per_serving",
+    ],
   },
   recipe_ingredients: {
     columns: [
@@ -241,7 +247,7 @@ app.get("/", (_req, res) => {
   res.json({
     name: "Rodzinna Lista Zakupów API",
     status: "ok",
-    schemaVersion: 3,
+    schemaVersion: 4,
     health: "/api/health",
   });
 });
@@ -256,7 +262,7 @@ app.get("/api/health", (_req, res) => {
 
   res.json({
     ok: missingTables.length === 0,
-    schemaVersion: 3,
+    schemaVersion: 4,
     database: path.basename(dbPath),
     dbPath,
     expectedTables,
@@ -376,6 +382,8 @@ function initializeDatabase() {
       recipe_category text not null default 'Tomek',
       instructions text not null default '',
       base_servings integer not null default 4,
+      calories_per_serving integer not null default 0,
+      protein_per_serving real not null default 0,
       created_at text not null,
       updated_at text not null,
       created_by text not null,
@@ -516,6 +524,8 @@ function initializeDatabase() {
   `);
 
   ensureColumn("recipes", "recipe_category", "text not null default 'Tomek'");
+  ensureColumn("recipes", "calories_per_serving", "integer not null default 0");
+  ensureColumn("recipes", "protein_per_serving", "real not null default 0");
   ensureColumn("receipts", "image_data", "text");
   ensureColumn("receipts", "image_mime_type", "text");
 }

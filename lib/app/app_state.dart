@@ -533,6 +533,8 @@ class AppState extends ChangeNotifier {
     String category = 'Tomek',
     required String instructions,
     required int baseServings,
+    int caloriesPerServing = 0,
+    double proteinPerServing = 0,
     required List<IngredientDraft> ingredients,
   }) async {
     final family = _data.family;
@@ -562,6 +564,8 @@ class AppState extends ChangeNotifier {
       category: _cleanRecipeCategory(category),
       instructions: instructions.trim(),
       baseServings: max(1, baseServings),
+      caloriesPerServing: max(0, caloriesPerServing),
+      proteinPerServing: max(0, proteinPerServing).toDouble(),
       createdAt: now,
       updatedAt: now,
       createdBy: member.id,
@@ -586,6 +590,8 @@ class AppState extends ChangeNotifier {
     String category = 'Tomek',
     required String instructions,
     required int baseServings,
+    int caloriesPerServing = 0,
+    double proteinPerServing = 0,
     required List<IngredientDraft> ingredients,
   }) async {
     final family = _data.family;
@@ -604,6 +610,8 @@ class AppState extends ChangeNotifier {
       category: _cleanRecipeCategory(category),
       instructions: instructions.trim(),
       baseServings: max(1, baseServings),
+      caloriesPerServing: max(0, caloriesPerServing),
+      proteinPerServing: max(0, proteinPerServing).toDouble(),
       createdAt: now,
       updatedAt: now,
       createdBy: member.id,
@@ -626,6 +634,8 @@ class AppState extends ChangeNotifier {
     String? category,
     required String instructions,
     required int baseServings,
+    int caloriesPerServing = 0,
+    double proteinPerServing = 0,
     required List<IngredientDraft> ingredients,
   }) async {
     final now = DateTime.now().toUtc();
@@ -637,6 +647,8 @@ class AppState extends ChangeNotifier {
                   category: _cleanRecipeCategory(category ?? entry.category),
                   instructions: instructions.trim(),
                   baseServings: max(1, baseServings),
+                  caloriesPerServing: max(0, caloriesPerServing),
+                  proteinPerServing: max(0, proteinPerServing).toDouble(),
                   updatedAt: now,
                   syncStatus: SyncStatus.pending,
                 )
@@ -1019,6 +1031,20 @@ class AppState extends ChangeNotifier {
       nutritionEntries: [..._data.nutritionEntries, entry],
     );
     await _persist(scheduleSync: true);
+  }
+
+  Future<void> addNutritionEntryFromRecipe({
+    required DateTime date,
+    required Recipe recipe,
+    required double servingPercent,
+  }) async {
+    final multiplier = max(0.0, servingPercent) / 100;
+    await addNutritionEntry(
+      date: date,
+      calories: (recipe.caloriesPerServing * multiplier).round(),
+      protein: recipe.proteinPerServing * multiplier,
+      note: '${recipe.name} (${_formatNumber(servingPercent)}% porcji)',
+    );
   }
 
   Future<void> deleteNutritionEntry(NutritionEntry entry) async {
@@ -1518,4 +1544,11 @@ class AppState extends ChangeNotifier {
         first.toUtc().month == second.toUtc().month &&
         first.toUtc().day == second.toUtc().day;
   }
+}
+
+String _formatNumber(num value) {
+  if (value % 1 == 0) {
+    return value.toInt().toString();
+  }
+  return value.toStringAsFixed(1);
 }
