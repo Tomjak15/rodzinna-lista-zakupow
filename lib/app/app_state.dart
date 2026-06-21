@@ -44,6 +44,7 @@ class AppState extends ChangeNotifier {
     'https://breezy-rivers-remain.loca.lt',
     'https://travel-authentication-measured-income.trycloudflare.com',
     'https://create-anonymous-nickel-researchers.trycloudflare.com',
+    'https://15d2bff4298c6914-83-21-102-8.serveousercontent.com',
   };
 
   final LocalStore _store;
