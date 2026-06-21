@@ -11,6 +11,21 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
+  test('kategorie przepisow maja typy posilkow przed imionami', () {
+    expect(AppState.recipeCategories.take(6), [
+      'Śniadania',
+      'Obiady',
+      'Kolacje',
+      'Przekąski',
+      'Desery',
+      'Napoje',
+    ]);
+    expect(
+      AppState.recipeCategories.indexOf('Przekąski'),
+      lessThan(AppState.recipeCategories.indexOf('Anna')),
+    );
+  });
+
   test('licznik kcal zapisuje cel i wpis dnia', () async {
     final store = await LocalStore.create();
     final appState = AppState(store: store);

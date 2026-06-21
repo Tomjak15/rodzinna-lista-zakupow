@@ -25,7 +25,23 @@ class AppState extends ChangeNotifier {
   AppState({required LocalStore store}) : _store = store;
 
   static const _continuousSyncInterval = Duration(seconds: 8);
+  static const recipeMealCategories = [
+    'Śniadania',
+    'Obiady',
+    'Kolacje',
+    'Przekąski',
+    'Desery',
+    'Napoje',
+  ];
   static const recipeOwnerCategories = ['Anna', 'Kaja', 'Maciej', 'Tomek'];
+  static const recipeCategories = [
+    ...recipeMealCategories,
+    ...recipeOwnerCategories,
+  ];
+  static const defaultRecipeCategory = 'Obiady';
+  static const _legacyBrokenServerUrls = {
+    'https://rodzinna-lista-zakupow--tomjak15.replit.app',
+  };
 
   final LocalStore _store;
   SyncService? _syncService;
@@ -66,9 +82,18 @@ class AppState extends ChangeNotifier {
 
   Future<void> initialize() async {
     _data = await _store.loadAll();
+    final storedServerUrl = _normalizeServerUrl(_store.loadServerUrl() ?? '');
     _serverUrl = _normalizeServerUrl(
-      _store.loadServerUrl() ?? BackendConfig.normalizedServerUrl,
+      storedServerUrl.isEmpty ||
+              _legacyBrokenServerUrls.contains(storedServerUrl)
+          ? BackendConfig.normalizedServerUrl
+          : storedServerUrl,
     );
+    if (storedServerUrl.isNotEmpty &&
+        storedServerUrl != _serverUrl &&
+        _legacyBrokenServerUrls.contains(storedServerUrl)) {
+      await _store.saveServerUrl(_serverUrl);
+    }
     _rebuildSyncService();
     _lastSyncAt = _store.loadLastSyncAt();
     _online = _isOnline(await _connectivity.checkConnectivity());
@@ -530,7 +555,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> addMealWithRecipe({
     required String mealName,
-    String category = 'Tomek',
+    String category = defaultRecipeCategory,
     required String instructions,
     required int baseServings,
     int caloriesPerServing = 0,
@@ -587,7 +612,7 @@ class AppState extends ChangeNotifier {
     required Meal meal,
     required Recipe parentRecipe,
     required String name,
-    String category = 'Tomek',
+    String category = defaultRecipeCategory,
     required String instructions,
     required int baseServings,
     int caloriesPerServing = 0,
@@ -1528,10 +1553,10 @@ class AppState extends ChangeNotifier {
 
   String _cleanRecipeCategory(String category) {
     final clean = category.trim();
-    if (recipeOwnerCategories.contains(clean)) {
+    if (recipeCategories.contains(clean)) {
       return clean;
     }
-    return recipeOwnerCategories.last;
+    return defaultRecipeCategory;
   }
 
   DateTime _dateOnlyUtc(DateTime date) {

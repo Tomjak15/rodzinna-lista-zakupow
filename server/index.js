@@ -247,7 +247,7 @@ app.get("/", (_req, res) => {
   res.json({
     name: "Rodzinna Lista Zakupów API",
     status: "ok",
-    schemaVersion: 4,
+    schemaVersion: 5,
     health: "/api/health",
   });
 });
@@ -262,7 +262,7 @@ app.get("/api/health", (_req, res) => {
 
   res.json({
     ok: missingTables.length === 0,
-    schemaVersion: 4,
+    schemaVersion: 5,
     database: path.basename(dbPath),
     dbPath,
     expectedTables,
@@ -379,7 +379,7 @@ function initializeDatabase() {
       meal_id text not null references meals(id) on delete cascade,
       parent_recipe_id text references recipes(id) on delete cascade,
       name text not null,
-      recipe_category text not null default 'Tomek',
+      recipe_category text not null default 'Obiady',
       instructions text not null default '',
       base_servings integer not null default 4,
       calories_per_serving integer not null default 0,
@@ -523,7 +523,7 @@ function initializeDatabase() {
     create index if not exists receipts_purchased_at_idx on receipts (purchased_at);
   `);
 
-  ensureColumn("recipes", "recipe_category", "text not null default 'Tomek'");
+  ensureColumn("recipes", "recipe_category", "text not null default 'Obiady'");
   ensureColumn("recipes", "calories_per_serving", "integer not null default 0");
   ensureColumn("recipes", "protein_per_serving", "real not null default 0");
   ensureColumn("receipts", "image_data", "text");
@@ -558,7 +558,7 @@ function sanitizeBody(table, body, id) {
     }
 
     if (!Object.hasOwn(body, column)) {
-      item[column] = null;
+      item[column] = defaultMissingValue(table, config, column);
       continue;
     }
 
@@ -580,6 +580,46 @@ function sanitizeBody(table, body, id) {
   }
 
   return item;
+}
+
+function defaultMissingValue(table, config, column) {
+  if (config.boolColumns.includes(column)) {
+    return 0;
+  }
+  if (config.numberColumns.includes(column)) {
+    if (column === "base_servings" || column === "servings") {
+      return 1;
+    }
+    if (column === "quantity") {
+      return 1;
+    }
+    return 0;
+  }
+  if (column === "parent_recipe_id" || column === "member_id") {
+    return null;
+  }
+  if (column === "recipe_category") {
+    return "Obiady";
+  }
+  if (column === "unit") {
+    return "szt.";
+  }
+  if (column === "activity") {
+    return "Trening";
+  }
+  if (column === "store_name") {
+    return "Sklep";
+  }
+  if (column === "items_json" || column === "recipe_ids") {
+    return "[]";
+  }
+  if (column === "created_at" || column === "updated_at") {
+    return new Date().toISOString();
+  }
+  if (column === "family_id" && table === "families") {
+    return null;
+  }
+  return "";
 }
 
 function upsertLastWriteWins(table, item) {

@@ -750,7 +750,7 @@ class Recipe {
       category:
           json['category']?.toString() ??
           json['recipe_category']?.toString() ??
-          'Tomek',
+          'Obiady',
       instructions: json['instructions']?.toString() ?? '',
       baseServings: intFromJson(json['baseServings'] ?? json['base_servings']),
       caloriesPerServing: intFromJson(
@@ -775,7 +775,7 @@ class Recipe {
       mealId: json['meal_id'].toString(),
       parentRecipeId: nullableString(json['parent_recipe_id']),
       name: json['name']?.toString() ?? '',
-      category: json['recipe_category']?.toString() ?? 'Tomek',
+      category: json['recipe_category']?.toString() ?? 'Obiady',
       instructions: json['instructions']?.toString() ?? '',
       baseServings: intFromJson(json['base_servings']),
       caloriesPerServing: intFromJson(json['calories_per_serving']),
