@@ -16,9 +16,9 @@ SUMA PLN 18,29
     expect(parsed.storeName, 'Biedronka');
     expect(parsed.items, hasLength(3));
     expect(parsed.items.map((item) => item.name), [
-      'CHLEB',
-      'MLEKO',
-      'MARWIT MARCHEW',
+      'Chleb',
+      'Mleko',
+      'Marwit Marchew',
     ]);
     expect(parsed.items[1].quantity, 2);
     expect(parsed.items[1].unit, 'l');
@@ -36,7 +36,24 @@ DO ZAPLATY 8,99 PLN
 ''');
 
     expect(parsed.storeName, 'Lidl');
-    expect(parsed.items.map((item) => item.name), ['SER']);
+    expect(parsed.items.map((item) => item.name), ['Ser']);
     expect(parsed.total, 8.99);
+  });
+
+  test('parser paragonu czyta produkty z literami VAT i sume', () {
+    final parsed = parseReceiptText('''
+LIDL
+MLEKO 3,2% 1L A 4,29
+CHLEB WIEJSKI B 5,99
+2 x BANAN KG 7,50
+SUMA PLN 17,78
+KARTA 17,78
+''');
+
+    expect(parsed.storeName, 'Lidl');
+    expect(parsed.total, 17.78);
+    expect(parsed.items.map((item) => item.name), contains('Mleko 3,2%'));
+    expect(parsed.items.map((item) => item.name), contains('Chleb Wiejski'));
+    expect(parsed.items.any((item) => item.name.contains('Banan')), isTrue);
   });
 }

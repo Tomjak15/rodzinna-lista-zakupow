@@ -323,6 +323,13 @@ class SyncService {
     return Family.fromRemote(_decodeObject(response.body));
   }
 
+  Future<List<Member>> fetchMembers(String familyId) async {
+    final rows = await _getList(
+      '/api/members?familyId=${Uri.encodeQueryComponent(familyId)}',
+    );
+    return rows.map(Member.fromRemote).toList();
+  }
+
   AppData _remapFamilyId(AppData data, Family remoteFamily) {
     final familyId = remoteFamily.id;
     final members = data.members

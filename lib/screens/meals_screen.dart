@@ -6,6 +6,10 @@ import '../app/app_scope.dart';
 import '../app/app_state.dart';
 import '../models/entities.dart';
 import '../models/ingredient_draft.dart';
+import '../models/recipe_scan_result.dart';
+import '../services/recipe_ai_service.dart';
+import '../services/recipe_scanner.dart';
+import '../utils/ingredient_parser.dart';
 
 class MealsScreen extends StatefulWidget {
   const MealsScreen({super.key});
@@ -16,6 +20,7 @@ class MealsScreen extends StatefulWidget {
 
 class _MealsScreenState extends State<MealsScreen> {
   String _selectedCategory = 'Wszystkie';
+  bool _aiScanning = false;
 
   @override
   Widget build(BuildContext context) {
@@ -46,13 +51,134 @@ class _MealsScreenState extends State<MealsScreen> {
             ...meals.map((meal) => _MealTile(meal: meal)),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openMealDialog(context),
-        icon: const Icon(Icons.add),
-        label: const Text('Dodaj przepis'),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'scan-recipe-ai',
+            onPressed: _aiScanning ? null : () => _scanRecipeWithAi(context),
+            icon: _aiScanning
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.document_scanner_outlined),
+            label: const Text('Skanuj AI'),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'add-recipe',
+            onPressed: () => _openMealDialog(context),
+            icon: const Icon(Icons.add),
+            label: const Text('Dodaj przepis'),
+          ),
+        ],
       ),
     );
   }
+
+  Future<void> _scanRecipeWithAi(BuildContext context) async {
+    final appState = AppScope.of(context);
+    if (!appState.backendConfigured) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Najpierw ustaw serwer synchronizacji.')),
+      );
+      return;
+    }
+
+    setState(() => _aiScanning = true);
+    try {
+      final RecipeImageScanResult? imageScan;
+      final String? pastedText;
+      if (recipeCameraScannerSupported) {
+        imageScan = await scanRecipeFromCamera();
+        pastedText = null;
+      } else {
+        imageScan = null;
+        pastedText = await _openRecipeTextScanDialog(context);
+      }
+      if (!context.mounted ||
+          (imageScan == null && (pastedText == null || pastedText.isEmpty))) {
+        return;
+      }
+
+      final service = RecipeAiService(appState.serverUrl);
+      try {
+        final scanDraft = await service.scanRecipe(
+          text: imageScan?.text ?? pastedText,
+          imageData: imageScan?.imageData,
+          imageMimeType: imageScan?.imageMimeType,
+        );
+        if (!context.mounted) {
+          return;
+        }
+        await _openMealDialog(
+          context,
+          initialDraft: _RecipeDraft.fromScan(scanDraft),
+        );
+      } finally {
+        service.dispose();
+      }
+    } on RecipeScanException catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } on RecipeAiException catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Nie udało się zeskanować przepisu: $error')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _aiScanning = false);
+      }
+    }
+  }
+}
+
+Future<String?> _openRecipeTextScanDialog(BuildContext context) async {
+  final controller = TextEditingController();
+  final value = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Wklej przepis'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: TextField(
+          controller: controller,
+          autofocus: true,
+          minLines: 8,
+          maxLines: 14,
+          decoration: const InputDecoration(
+            labelText: 'Tekst przepisu',
+            hintText: 'Nazwa, składniki, porcje i przygotowanie',
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Anuluj'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, controller.text.trim()),
+          child: const Text('Skanuj AI'),
+        ),
+      ],
+    ),
+  );
+  controller.dispose();
+  return value;
 }
 
 class _RecipeCategoryBar extends StatelessWidget {
@@ -355,6 +481,21 @@ class _RecipeDraft {
     required this.ingredients,
   });
 
+  factory _RecipeDraft.fromScan(RecipeScanDraft draft) {
+    final category = AppState.recipeCategories.contains(draft.category)
+        ? draft.category
+        : AppState.defaultRecipeCategory;
+    return _RecipeDraft(
+      name: draft.name,
+      category: category,
+      instructions: draft.instructions,
+      baseServings: draft.baseServings,
+      caloriesPerServing: draft.caloriesPerServing,
+      proteinPerServing: draft.proteinPerServing,
+      ingredients: draft.ingredients,
+    );
+  }
+
   final String name;
   final String category;
   final String instructions;
@@ -368,11 +509,13 @@ class _RecipeDialog extends StatefulWidget {
   const _RecipeDialog({
     required this.title,
     this.recipe,
+    this.initialDraft,
     this.initialIngredients,
   });
 
   final String title;
   final Recipe? recipe;
+  final _RecipeDraft? initialDraft;
   final List<IngredientDraft>? initialIngredients;
 
   @override
@@ -393,25 +536,40 @@ class _RecipeDialogState extends State<_RecipeDialog> {
   void initState() {
     super.initState();
     final recipe = widget.recipe;
-    _nameController = TextEditingController(text: recipe?.name ?? '');
+    final initialDraft = widget.initialDraft;
+    _nameController = TextEditingController(
+      text: recipe?.name ?? initialDraft?.name ?? '',
+    );
     _category = AppState.recipeCategories.contains(recipe?.category)
         ? recipe!.category
+        : AppState.recipeCategories.contains(initialDraft?.category)
+        ? initialDraft!.category
         : AppState.defaultRecipeCategory;
     _instructionsController = TextEditingController(
-      text: recipe?.instructions ?? '',
+      text: recipe?.instructions ?? initialDraft?.instructions ?? '',
     );
     _servingsController = TextEditingController(
-      text: recipe?.baseServings.toString() ?? '4',
+      text:
+          recipe?.baseServings.toString() ??
+          initialDraft?.baseServings.toString() ??
+          '4',
     );
     _caloriesController = TextEditingController(
-      text: recipe?.caloriesPerServing.toString() ?? '',
+      text:
+          recipe?.caloriesPerServing.toString() ??
+          (initialDraft == null || initialDraft.caloriesPerServing == 0
+              ? ''
+              : initialDraft.caloriesPerServing.toString()),
     );
     _proteinController = TextEditingController(
-      text: recipe == null || recipe.proteinPerServing == 0
-          ? ''
-          : formatQuantity(recipe.proteinPerServing),
+      text: recipe != null && recipe.proteinPerServing > 0
+          ? formatQuantity(recipe.proteinPerServing)
+          : initialDraft != null && initialDraft.proteinPerServing > 0
+          ? formatQuantity(initialDraft.proteinPerServing)
+          : '',
     );
-    final initialIngredients = widget.initialIngredients ?? const [];
+    final initialIngredients =
+        widget.initialIngredients ?? initialDraft?.ingredients ?? const [];
     _ingredientLines = initialIngredients.isEmpty
         ? [_IngredientLineController()]
         : initialIngredients
@@ -722,6 +880,7 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
   late final TextEditingController _servingsController;
   bool _includeMain = true;
   late final Set<String> _selectedSubRecipes;
+  final Set<String> _ownedIngredientKeys = {};
   String? _selectionError;
 
   @override
@@ -741,10 +900,19 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final appState = AppScope.of(context);
+    final servings = max(1, int.tryParse(_servingsController.text) ?? 1);
+    final recipeIds = _selectedRecipeIds();
+    final neededIngredients = _neededIngredients(
+      appState: appState,
+      recipeIds: recipeIds,
+      servings: servings,
+    );
+
     return AlertDialog(
       title: const Text('Dodaj do listy zakupów'),
       content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 460),
+        constraints: const BoxConstraints(maxWidth: 520),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -753,6 +921,7 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
                 controller: _servingsController,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: 'Liczba porcji'),
+                onChanged: (_) => setState(() => _selectionError = null),
               ),
               const SizedBox(height: 12),
               if (widget.subRecipes.isNotEmpty) ...[
@@ -835,6 +1004,42 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
                     title: Text(recipe.name),
                   ),
                 ),
+              const Divider(),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Zaznacz, co masz w domu',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              const SizedBox(height: 4),
+              if (neededIngredients.isEmpty)
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Brak składników do dodania'),
+                )
+              else
+                ...neededIngredients.map((ingredient) {
+                  final key = _ingredientKey(ingredient);
+                  return CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: _ownedIngredientKeys.contains(key),
+                    onChanged: (value) {
+                      setState(() {
+                        if (value ?? false) {
+                          _ownedIngredientKeys.add(key);
+                        } else {
+                          _ownedIngredientKeys.remove(key);
+                        }
+                        _selectionError = null;
+                      });
+                    },
+                    title: Text(ingredient.name),
+                    subtitle: Text(
+                      '${formatQuantity(ingredient.quantity)} ${ingredient.unit}',
+                    ),
+                  );
+                }),
               if (_selectionError != null)
                 Align(
                   alignment: Alignment.centerLeft,
@@ -860,10 +1065,7 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
   }
 
   void _save() {
-    final recipeIds = <String>[
-      if (_includeMain) widget.mainRecipe.id,
-      ..._selectedSubRecipes,
-    ];
+    final recipeIds = _selectedRecipeIds();
     if (recipeIds.isEmpty) {
       setState(() {
         _selectionError = 'Wybierz przepis albo dodatek';
@@ -871,14 +1073,63 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
       return;
     }
     final servings = max(1, int.tryParse(_servingsController.text) ?? 1);
-    Navigator.pop(context, (recipeIds: recipeIds, servings: servings));
+    final ingredientsToAdd =
+        _neededIngredients(
+              appState: AppScope.of(context),
+              recipeIds: recipeIds,
+              servings: servings,
+            )
+            .where(
+              (ingredient) =>
+                  !_ownedIngredientKeys.contains(_ingredientKey(ingredient)),
+            )
+            .toList();
+    if (ingredientsToAdd.isEmpty) {
+      setState(() {
+        _selectionError = 'Wszystko zaznaczone jako masz w domu';
+      });
+      return;
+    }
+    Navigator.pop(context, ingredientsToAdd);
+  }
+
+  List<String> _selectedRecipeIds() {
+    return [if (_includeMain) widget.mainRecipe.id, ..._selectedSubRecipes];
+  }
+
+  List<IngredientDraft> _neededIngredients({
+    required AppState appState,
+    required List<String> recipeIds,
+    required int servings,
+  }) {
+    final selectedRecipes = appState.data.activeRecipes
+        .where((recipe) => recipeIds.contains(recipe.id))
+        .toList();
+    final scaledIngredients = <IngredientDraft>[];
+    for (final recipe in selectedRecipes) {
+      final factor = servings / max(1, recipe.baseServings);
+      for (final ingredient in appState.ingredientsForRecipe(recipe.id)) {
+        scaledIngredients.add(
+          IngredientDraft(
+            name: ingredient.name,
+            quantity: ingredient.quantity * factor,
+            unit: ingredient.unit,
+          ),
+        );
+      }
+    }
+    return mergeIngredientDrafts(scaledIngredients);
   }
 }
 
-Future<void> _openMealDialog(BuildContext context) async {
+Future<void> _openMealDialog(
+  BuildContext context, {
+  _RecipeDraft? initialDraft,
+}) async {
   final draft = await showDialog<_RecipeDraft>(
     context: context,
-    builder: (_) => const _RecipeDialog(title: 'Nowy obiad'),
+    builder: (_) =>
+        _RecipeDialog(title: 'Nowy obiad', initialDraft: initialDraft),
   );
   if (draft == null || !context.mounted) {
     return;
@@ -961,18 +1212,17 @@ Future<void> _openAddToShoppingDialog(
   required Recipe mainRecipe,
   required List<Recipe> subRecipes,
 }) async {
-  final result = await showDialog<({List<String> recipeIds, int servings})>(
+  final ingredientsToAdd = await showDialog<List<IngredientDraft>>(
     context: context,
     builder: (_) =>
         _AddToShoppingDialog(mainRecipe: mainRecipe, subRecipes: subRecipes),
   );
-  if (result == null || !context.mounted || result.recipeIds.isEmpty) {
+  if (ingredientsToAdd == null ||
+      !context.mounted ||
+      ingredientsToAdd.isEmpty) {
     return;
   }
-  await AppScope.of(context).addRecipesToShoppingList(
-    recipeIds: result.recipeIds,
-    servings: result.servings,
-  );
+  await AppScope.of(context).addIngredientsToShoppingList(ingredientsToAdd);
   if (context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Składniki dodane do listy zakupów')),
@@ -1015,4 +1265,8 @@ int _parseInt(String value) {
 
 double _parseDouble(String value) {
   return double.tryParse(value.trim().replaceAll(',', '.')) ?? 0;
+}
+
+String _ingredientKey(IngredientDraft ingredient) {
+  return '${normalizeName(ingredient.name)}|${normalizeName(normalizeIngredientUnit(ingredient.unit))}';
 }

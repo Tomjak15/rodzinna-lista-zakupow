@@ -286,6 +286,19 @@ app.get("/api/families/code/:code", (req, res) => {
   res.json(rowToApi("families", row));
 });
 
+app.post("/api/ai/recipe-scan", async (req, res, next) => {
+  try {
+    const result = await scanRecipeFromRequest({
+      body: req.body,
+      apiKey: process.env.OPENAI_API_KEY,
+      model: process.env.OPENAI_RECIPE_MODEL || "gpt-4.1-mini",
+    });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/:table", (req, res) => {
   const table = requireTable(req.params.table);
   const familyId = req.query.familyId?.toString();
@@ -681,4 +694,379 @@ function boolToInt(value) {
     return value === "true" || value === "1" ? 1 : 0;
   }
   return 0;
+}
+
+async function scanRecipeFromRequest({ body, apiKey, model }) {
+  const text = cleanText(body?.text);
+  const imageData = cleanText(body?.imageData);
+  const imageMimeType = cleanText(body?.imageMimeType) || "image/jpeg";
+
+  if (!text && !imageData) {
+    throw httpError("Dodaj zdjęcie albo tekst przepisu.", 400);
+  }
+
+  if (apiKey) {
+    try {
+      return normalizeRecipeScanDraft(
+        await scanRecipeWithOpenAi({
+          apiKey,
+          model,
+          text,
+          imageData,
+          imageMimeType,
+        }),
+      );
+    } catch (error) {
+      if (!text) {
+        throw error;
+      }
+      console.warn("AI recipe scan failed, using text fallback:", error.message);
+    }
+  }
+
+  if (!text) {
+    throw httpError(
+      "AI nie jest jeszcze skonfigurowane. Ustaw OPENAI_API_KEY na serwerze.",
+      503,
+    );
+  }
+
+  return normalizeRecipeScanDraft(parseRecipeTextFallback(text));
+}
+
+async function scanRecipeWithOpenAi({ apiKey, model, text, imageData, imageMimeType }) {
+  const content = [
+    {
+      type: "input_text",
+      text: [
+        "Odczytaj polski przepis kulinarny ze zdjęcia lub tekstu.",
+        "Zwróć tylko dane przepisu. Nie zgaduj agresywnie: jeśli kcal/białka nie ma, ustaw 0.",
+        "Kategorie dozwolone: Śniadania, Obiady, Kolacje, Przekąski, Desery, Napoje, Anna, Kaja, Maciej, Tomek.",
+        "Normalizuj składniki do pól: nazwa, ilość, jednostka. Instrukcję zapisz po polsku.",
+        text ? `Tekst OCR/użytkownika:\n${text}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    },
+  ];
+
+  if (imageData) {
+    content.push({
+      type: "input_image",
+      image_url: `data:${imageMimeType};base64,${imageData}`,
+    });
+  }
+
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      input: [{ role: "user", content }],
+      max_output_tokens: 1800,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "recipe_scan",
+          strict: true,
+          schema: recipeScanJsonSchema(),
+        },
+      },
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw httpError(
+      payload?.error?.message || `OpenAI error ${response.status}`,
+      response.status,
+    );
+  }
+
+  const outputText = extractOpenAiOutputText(payload);
+  if (!outputText) {
+    throw httpError("AI nie zwróciło przepisu.", 502);
+  }
+  return JSON.parse(outputText);
+}
+
+function recipeScanJsonSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "name",
+      "category",
+      "instructions",
+      "baseServings",
+      "caloriesPerServing",
+      "proteinPerServing",
+      "ingredients",
+    ],
+    properties: {
+      name: { type: "string" },
+      category: {
+        type: "string",
+        enum: [
+          "Śniadania",
+          "Obiady",
+          "Kolacje",
+          "Przekąski",
+          "Desery",
+          "Napoje",
+          "Anna",
+          "Kaja",
+          "Maciej",
+          "Tomek",
+        ],
+      },
+      instructions: { type: "string" },
+      baseServings: { type: "integer", minimum: 1 },
+      caloriesPerServing: { type: "integer", minimum: 0 },
+      proteinPerServing: { type: "number", minimum: 0 },
+      ingredients: {
+        type: "array",
+        minItems: 1,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["name", "quantity", "unit"],
+          properties: {
+            name: { type: "string" },
+            quantity: { type: "number", exclusiveMinimum: 0 },
+            unit: { type: "string" },
+          },
+        },
+      },
+    },
+  };
+}
+
+function extractOpenAiOutputText(payload) {
+  if (typeof payload.output_text === "string") {
+    return payload.output_text;
+  }
+  for (const item of payload.output || []) {
+    for (const part of item.content || []) {
+      if (part.type === "output_text" && typeof part.text === "string") {
+        return part.text;
+      }
+    }
+  }
+  return "";
+}
+
+function parseRecipeTextFallback(text) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const name =
+    lines.find(
+      (line) =>
+        !isRecipeSectionHeader(line) &&
+        !isServingLine(line) &&
+        !parseIngredientLine(line),
+    ) ||
+    lines[0] ||
+    "Nowy przepis";
+  const baseServings = findServings(text);
+  const ingredients = [];
+  const instructionLines = [];
+  let inIngredients = false;
+  let inInstructions = false;
+
+  for (const line of lines) {
+    if (isIngredientsHeader(line)) {
+      inIngredients = true;
+      inInstructions = false;
+      continue;
+    }
+    if (isInstructionsHeader(line)) {
+      inIngredients = false;
+      inInstructions = true;
+      continue;
+    }
+    if (isServingLine(line)) {
+      continue;
+    }
+    if (line === name) {
+      continue;
+    }
+
+    const ingredient = parseIngredientLine(line);
+    if ((inIngredients || ingredient) && ingredient && !inInstructions) {
+      ingredients.push(ingredient);
+      continue;
+    }
+    if (inInstructions || !ingredient) {
+      instructionLines.push(line);
+    }
+  }
+
+  return {
+    name,
+    category: guessRecipeCategory(text),
+    instructions: instructionLines.join("\n").trim(),
+    baseServings,
+    caloriesPerServing: findNutrition(text, /(\d{2,5})\s*kcal/i),
+    proteinPerServing: findNutrition(text, /(\d+(?:[,.]\d+)?)\s*g\s*(?:białka|bialka|protein)/i),
+    ingredients,
+  };
+}
+
+function parseIngredientLine(line) {
+  const cleaned = line
+    .replace(/^[\s\-*•]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const match = cleaned.match(
+    /^(.+?)\s+(\d+(?:[,.]\d+)?|\d+\/\d+)\s*(g|kg|ml|l|szt\.?|łyżka|łyżki|łyżeczka|łyżeczki|szklanka|opak\.?|puszka|ząbek|garść)?$/i,
+  );
+  const reverseMatch = cleaned.match(
+    /^(\d+(?:[,.]\d+)?|\d+\/\d+)\s*(g|kg|ml|l|szt\.?|łyżka|łyżki|łyżeczka|łyżeczki|szklanka|opak\.?|puszka|ząbek|garść)?\s+(.+)$/i,
+  );
+
+  const source = match
+    ? { name: match[1], quantity: match[2], unit: match[3] }
+    : reverseMatch
+    ? { name: reverseMatch[3], quantity: reverseMatch[1], unit: reverseMatch[2] }
+    : null;
+  if (!source) {
+    return null;
+  }
+  const quantity = parseQuantity(source.quantity);
+  const name = source.name.trim();
+  if (!name || quantity <= 0 || /^(porcj|osob)/i.test(name)) {
+    return null;
+  }
+  return {
+    name,
+    quantity,
+    unit: normalizeUnit(source.unit || "szt."),
+  };
+}
+
+function normalizeRecipeScanDraft(value) {
+  const ingredients = Array.isArray(value.ingredients)
+    ? value.ingredients
+        .map((item) => ({
+          name: cleanText(item?.name),
+          quantity: Number(item?.quantity || 0),
+          unit: normalizeUnit(cleanText(item?.unit) || "szt."),
+        }))
+        .filter((item) => item.name && item.quantity > 0)
+    : [];
+
+  if (ingredients.length === 0) {
+    throw httpError("Nie rozpoznano składników przepisu.", 422);
+  }
+
+  return {
+    name: cleanText(value.name) || "Nowy przepis",
+    category: allowedRecipeCategories().includes(cleanText(value.category))
+      ? cleanText(value.category)
+      : "Obiady",
+    instructions: cleanText(value.instructions),
+    baseServings: Math.max(1, Math.round(Number(value.baseServings || 4))),
+    caloriesPerServing: Math.max(
+      0,
+      Math.round(Number(value.caloriesPerServing || 0)),
+    ),
+    proteinPerServing: Math.max(0, Number(value.proteinPerServing || 0)),
+    ingredients,
+  };
+}
+
+function allowedRecipeCategories() {
+  return [
+    "Śniadania",
+    "Obiady",
+    "Kolacje",
+    "Przekąski",
+    "Desery",
+    "Napoje",
+    "Anna",
+    "Kaja",
+    "Maciej",
+    "Tomek",
+  ];
+}
+
+function isRecipeSectionHeader(line) {
+  return isIngredientsHeader(line) || isInstructionsHeader(line);
+}
+
+function isIngredientsHeader(line) {
+  return /^składniki:?$/i.test(line) || /^skladniki:?$/i.test(line);
+}
+
+function isInstructionsHeader(line) {
+  return /^(przygotowanie|wykonanie|sposób przygotowania|sposob przygotowania):?$/i.test(line);
+}
+
+function isServingLine(line) {
+  return /^\d{1,2}\s*(?:porcj|osob)/i.test(line);
+}
+
+function guessRecipeCategory(text) {
+  const value = text.toLowerCase();
+  if (/śniad|sniad|owsianka|jajecznica/.test(value)) return "Śniadania";
+  if (/deser|ciasto|lody|tort|naleśniki/.test(value)) return "Desery";
+  if (/koktajl|napój|napoj|lemoniada/.test(value)) return "Napoje";
+  if (/kolacj/.test(value)) return "Kolacje";
+  if (/przekąsk|przekask/.test(value)) return "Przekąski";
+  return "Obiady";
+}
+
+function findServings(text) {
+  const match = text.match(/(\d{1,2})\s*(?:porcj|osob)/i);
+  return match ? Math.max(1, Number(match[1])) : 4;
+}
+
+function findNutrition(text, pattern) {
+  const match = text.match(pattern);
+  return match ? Number(match[1].replace(",", ".")) || 0 : 0;
+}
+
+function parseQuantity(value) {
+  const normalized = value.replace(",", ".");
+  const fraction = normalized.match(/^(\d+)\/(\d+)$/);
+  if (fraction) {
+    return Number(fraction[1]) / Number(fraction[2]);
+  }
+  return Number(normalized) || 0;
+}
+
+function normalizeUnit(value) {
+  const unit = cleanText(value).toLowerCase().replace(/\.$/, "");
+  const aliases = {
+    szt: "szt.",
+    sztuka: "szt.",
+    sztuki: "szt.",
+    lyzka: "łyżka",
+    lyzki: "łyżka",
+    "łyżki": "łyżka",
+    lyzeczka: "łyżeczka",
+    lyzeczki: "łyżeczka",
+    "łyżeczki": "łyżeczka",
+    opak: "opak.",
+    op: "opak.",
+    zabek: "ząbek",
+    zabki: "ząbek",
+  };
+  return aliases[unit] || unit || "szt.";
+}
+
+function cleanText(value) {
+  return (value ?? "").toString().trim();
+}
+
+function httpError(message, statusCode) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
 }

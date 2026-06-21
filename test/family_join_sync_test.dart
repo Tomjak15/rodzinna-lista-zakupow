@@ -50,6 +50,31 @@ void main() {
     expect(members.single['family_id'], 'family-admin');
   });
 
+  test('dolacza jako ten sam czlonek na drugim urzadzeniu', () async {
+    members.add({
+      'id': 'admin-member',
+      'family_id': 'family-admin',
+      'name': 'Tomek',
+      'email': null,
+      'phone': null,
+      'avatar_url': null,
+      'created_at': '2026-06-20T10:00:00.000Z',
+      'updated_at': '2026-06-20T10:00:00.000Z',
+      'created_by': 'admin-member',
+      'is_deleted': false,
+    });
+    final store = await LocalStore.create();
+    final appState = AppState(store: store);
+    addTearDown(appState.dispose);
+
+    await appState.updateServerUrl('http://127.0.0.1:${server.port}');
+    await appState.joinFamily(code: 'ADMIN1', memberName: 'Tomek');
+
+    expect(appState.data.currentMember?.id, 'admin-member');
+    expect(appState.isFamilyCreator, isTrue);
+    expect(members, hasLength(1));
+  });
+
   test('nie tworzy lokalnej rodziny, gdy kod nie istnieje', () async {
     final store = await LocalStore.create();
     final appState = AppState(store: store);

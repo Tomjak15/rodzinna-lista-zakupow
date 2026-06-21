@@ -167,7 +167,13 @@ class _ReceiptTile extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ExpansionTile(
-        leading: _ReceiptThumbnail(receipt: receipt),
+        leading: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: receipt.imageData == null
+              ? null
+              : () => _showReceiptPhoto(context, receipt),
+          child: _ReceiptThumbnail(receipt: receipt),
+        ),
         title: Text(receipt.storeName.isEmpty ? 'Sklep' : receipt.storeName),
         subtitle: Text(
           '${_formatMoney(receipt.total)} - '
@@ -209,11 +215,25 @@ class _ReceiptTile extends StatelessWidget {
                 onPressed: receipt.items.isEmpty
                     ? null
                     : () async {
-                        await appState.addReceiptItemsToShoppingList(receipt);
+                        final excludedIndexes =
+                            await _openReceiptShoppingSelection(
+                              context,
+                              receipt,
+                            );
+                        if (excludedIndexes == null || !context.mounted) {
+                          return;
+                        }
+                        final addedCount = await appState
+                            .addReceiptItemsToShoppingList(
+                              receipt,
+                              excludedIndexes: excludedIndexes,
+                            );
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Dodano produkty do listy.'),
+                            SnackBar(
+                              content: Text(
+                                'Dodano $addedCount produktów do listy.',
+                              ),
                             ),
                           );
                         }
@@ -232,6 +252,128 @@ class _ReceiptTile extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<Set<int>?> _openReceiptShoppingSelection(
+  BuildContext context,
+  Receipt receipt,
+) {
+  return showDialog<Set<int>>(
+    context: context,
+    builder: (_) => _ReceiptShoppingSelectionDialog(receipt: receipt),
+  );
+}
+
+class _ReceiptShoppingSelectionDialog extends StatefulWidget {
+  const _ReceiptShoppingSelectionDialog({required this.receipt});
+
+  final Receipt receipt;
+
+  @override
+  State<_ReceiptShoppingSelectionDialog> createState() =>
+      _ReceiptShoppingSelectionDialogState();
+}
+
+class _ReceiptShoppingSelectionDialogState
+    extends State<_ReceiptShoppingSelectionDialog> {
+  final Set<int> _excludedIndexes = {};
+
+  @override
+  Widget build(BuildContext context) {
+    final items = widget.receipt.items;
+    final includedCount = items.length - _excludedIndexes.length;
+    return AlertDialog(
+      title: const Text('Dodaj produkty'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Zaznacz produkty, których nie chcesz dodawać.'),
+              const SizedBox(height: 8),
+              ...List.generate(items.length, (index) {
+                final item = items[index];
+                return CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _excludedIndexes.contains(index),
+                  onChanged: (value) {
+                    setState(() {
+                      if (value ?? false) {
+                        _excludedIndexes.add(index);
+                      } else {
+                        _excludedIndexes.remove(index);
+                      }
+                    });
+                  },
+                  title: Text(item.name),
+                  subtitle: Text(
+                    '${formatQuantity(item.quantity)} ${item.unit} - ${_formatMoney(item.price)}',
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Anuluj'),
+        ),
+        FilledButton(
+          onPressed: includedCount <= 0
+              ? null
+              : () => Navigator.pop(context, _excludedIndexes),
+          child: Text('Dodaj $includedCount'),
+        ),
+      ],
+    );
+  }
+}
+
+void _showReceiptPhoto(BuildContext context, Receipt receipt) {
+  final bytes = _decodeReceiptImage(receipt.imageData);
+  if (bytes == null) {
+    return;
+  }
+  showDialog<void>(
+    context: context,
+    builder: (context) => Dialog.fullscreen(
+      child: SafeArea(
+        child: Column(
+          children: [
+            ListTile(
+              title: Text(
+                receipt.storeName.isEmpty ? 'Paragon' : receipt.storeName,
+              ),
+              subtitle: Text(_formatMoney(receipt.total)),
+              trailing: IconButton(
+                tooltip: 'Zamknij',
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close),
+              ),
+            ),
+            Expanded(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 5,
+                child: Center(
+                  child: Image.memory(
+                    bytes,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) =>
+                        const Icon(Icons.broken_image_outlined),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _ReceiptThumbnail extends StatelessWidget {

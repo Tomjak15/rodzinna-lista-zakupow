@@ -63,4 +63,30 @@ void main() {
 
     expect(appState.data.activeShoppingItems.single.name, 'Chleb');
   });
+
+  test('paragon pozwala pominac produkty przy dodawaniu do listy', () async {
+    final store = await LocalStore.create();
+    final appState = AppState(store: store);
+    addTearDown(appState.dispose);
+
+    await appState.createFamily(familyName: 'Dom', memberName: 'Tomek');
+    await appState.addReceipt(
+      storeName: 'Sklep',
+      purchasedAt: DateTime(2026, 6, 20, 12),
+      total: 12,
+      items: const [
+        ReceiptItem(name: 'Chleb', quantity: 1, unit: 'szt.', price: 5),
+        ReceiptItem(name: 'Mleko', quantity: 1, unit: 'l', price: 7),
+      ],
+    );
+
+    final added = await appState.addReceiptItemsToShoppingList(
+      appState.data.activeReceipts.single,
+      excludedIndexes: {1},
+    );
+
+    expect(added, 1);
+    expect(appState.data.activeShoppingItems, hasLength(1));
+    expect(appState.data.activeShoppingItems.single.name, 'Chleb');
+  });
 }

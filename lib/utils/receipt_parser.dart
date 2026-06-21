@@ -23,43 +23,32 @@ ParsedReceipt parseReceiptText(String rawText) {
   final items = <ReceiptItem>[];
   double? detectedTotal;
 
-  for (final line in lines) {
-    final lowerLine = line.toLowerCase();
+  for (var index = 0; index < lines.length; index++) {
+    final line = lines[index];
+    final lowerLine = _normalizeForSearch(line);
     final price = _lastPrice(line);
+
     if (_isTotalLine(lowerLine)) {
-      detectedTotal = price?.value ?? detectedTotal;
+      detectedTotal =
+          price?.value ?? _nearbyPrice(lines, index)?.value ?? detectedTotal;
       continue;
     }
-    if (price == null || _shouldSkipLine(lowerLine)) {
-      continue;
-    }
-
-    final beforePrice = line.substring(0, line.lastIndexOf(price.raw)).trim();
-    final parsedQuantity = _quantityFromLine(beforePrice);
-    var name = beforePrice
-        .replaceAll(_quantityPattern, ' ')
-        .replaceAll(RegExp(r'\b\d+\s*x\s*$', caseSensitive: false), ' ')
-        .replaceAll(RegExp(r'[*#:;]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-
-    name = name
-        .replaceFirst(RegExp(r'^[0-9]{2,}\s+'), '')
-        .replaceAll(RegExp(r'\b\d{5,}\b'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    if (!_isProductName(name)) {
+    if (_shouldSkipLine(lowerLine) || price == null) {
       continue;
     }
 
-    items.add(
-      ReceiptItem(
-        name: name,
-        quantity: parsedQuantity.quantity,
-        unit: normalizeIngredientUnit(parsedQuantity.unit),
-        price: price.value,
-      ),
+    final item = _itemFromLine(
+      line,
+      price,
+      previousLine: index > 0 ? lines[index - 1] : null,
     );
+    if (item != null) {
+      items.add(item);
+    }
+  }
+
+  if (items.isEmpty) {
+    items.addAll(_itemsFromSplitNameAndPriceLines(lines));
   }
 
   final fallbackTotal = items.fold<double>(0, (sum, item) => sum + item.price);
@@ -68,6 +57,60 @@ ParsedReceipt parseReceiptText(String rawText) {
     total: detectedTotal ?? fallbackTotal,
     storeName: _detectStoreName(lines),
   );
+}
+
+ReceiptItem? _itemFromLine(String line, _Price price, {String? previousLine}) {
+  var beforePrice = line.substring(0, line.lastIndexOf(price.raw)).trim();
+  if (_lineHasOnlyPrice(line) && previousLine != null) {
+    beforePrice = previousLine;
+  }
+
+  final parsedQuantity = _quantityFromLine(beforePrice);
+  var name = beforePrice
+      .replaceAll(_quantityPattern, ' ')
+      .replaceAll(RegExp(r'^\d+(?:[,.]\d+)?\s*x\s+', caseSensitive: false), ' ')
+      .replaceAll(RegExp(r'\b\d+\s*x\s*$', caseSensitive: false), ' ')
+      .replaceAll(RegExp(r'\b[A-Z]\b$'), ' ')
+      .replaceAll(
+        RegExp(r'\b(kg|g|l|ml|szt|op|opak)\b$', caseSensitive: false),
+        ' ',
+      )
+      .replaceAll(RegExp(r'[*#:;]'), ' ')
+      .replaceAll(RegExp(r'\b\d{5,}\b'), ' ')
+      .replaceAll(RegExp(r'^[0-9]{2,}\s+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  if (!_isProductName(name)) {
+    return null;
+  }
+
+  return ReceiptItem(
+    name: _titleCaseProduct(name),
+    quantity: parsedQuantity.quantity,
+    unit: normalizeIngredientUnit(parsedQuantity.unit),
+    price: price.value,
+  );
+}
+
+List<ReceiptItem> _itemsFromSplitNameAndPriceLines(List<String> lines) {
+  final items = <ReceiptItem>[];
+  for (var index = 1; index < lines.length; index++) {
+    final price = _lastPrice(lines[index]);
+    if (price == null || !_lineHasOnlyPrice(lines[index])) {
+      continue;
+    }
+    final previous = lines[index - 1];
+    final lowerPrevious = _normalizeForSearch(previous);
+    if (_shouldSkipLine(lowerPrevious) || _isTotalLine(lowerPrevious)) {
+      continue;
+    }
+    final item = _itemFromLine('$previous ${price.raw}', price);
+    if (item != null) {
+      items.add(item);
+    }
+  }
+  return items;
 }
 
 String? _detectStoreName(List<String> lines) {
@@ -79,7 +122,8 @@ String? _detectStoreName(List<String> lines) {
     'carrefour': 'Carrefour',
     'auchan': 'Auchan',
     'dino': 'Dino',
-    'zabka': 'Zabka',
+    'zabka': 'Żabka',
+    'żabka': 'Żabka',
     'netto': 'Netto',
     'stokrotka': 'Stokrotka',
     'intermarche': 'Intermarche',
@@ -95,8 +139,8 @@ String? _detectStoreName(List<String> lines) {
     'media expert': 'Media Expert',
   };
 
-  for (final line in lines.take(12)) {
-    final normalized = _normalizeStoreCandidate(line);
+  for (final line in lines.take(14)) {
+    final normalized = _normalizeForSearch(line);
     for (final entry in knownStores.entries) {
       if (normalized.contains(entry.key)) {
         return entry.value;
@@ -106,17 +150,17 @@ String? _detectStoreName(List<String> lines) {
 
   for (final line in lines.take(8)) {
     final candidate = line
-        .replaceAll(RegExp(r'[^A-Za-z0-9 &.-]'), ' ')
+        .replaceAll(RegExp(r'[^A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż0-9 &.-]'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
-    final lower = candidate.toLowerCase();
+    final lower = _normalizeForSearch(candidate);
     if (candidate.length >= 3 &&
         candidate.length <= 36 &&
-        RegExp(r'[A-Za-z]').hasMatch(candidate) &&
+        RegExp(r'[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]').hasMatch(candidate) &&
         !_shouldSkipLine(lower) &&
-        !lower.contains('sp. z') &&
-        !lower.contains('s.a') &&
-        !lower.contains('ul.') &&
+        !lower.contains('sp z') &&
+        !lower.contains('s a') &&
+        !lower.contains('ul ') &&
         !RegExp(r'\d{4,}').hasMatch(candidate)) {
       return _titleCase(candidate);
     }
@@ -124,39 +168,12 @@ String? _detectStoreName(List<String> lines) {
   return null;
 }
 
-String _normalizeStoreCandidate(String value) {
-  return value
-      .toLowerCase()
-      .replaceAll('ą', 'a')
-      .replaceAll('ć', 'c')
-      .replaceAll('ę', 'e')
-      .replaceAll('ł', 'l')
-      .replaceAll('ń', 'n')
-      .replaceAll('ó', 'o')
-      .replaceAll('ś', 's')
-      .replaceAll('ż', 'z')
-      .replaceAll('ź', 'z');
-}
-
-String _titleCase(String value) {
-  return value
-      .split(' ')
-      .where((part) => part.isNotEmpty)
-      .map((part) {
-        if (part.length <= 2 && part == part.toUpperCase()) {
-          return part;
-        }
-        return part[0].toUpperCase() + part.substring(1).toLowerCase();
-      })
-      .join(' ');
-}
-
 bool _isProductName(String value) {
   final name = value.trim();
   if (name.length < 2) {
     return false;
   }
-  if (!RegExp(r'[A-Za-z]').hasMatch(name)) {
+  if (!RegExp(r'[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]').hasMatch(name)) {
     return false;
   }
   if (RegExp(r'^\d+$').hasMatch(name)) {
@@ -172,10 +189,13 @@ bool _isTotalLine(String line) {
   return line.contains('suma') ||
       line.contains('razem') ||
       line.contains('lacznie') ||
+      line.contains('łącznie') ||
       line.contains('do zaplaty') ||
       line.contains('do zapłaty') ||
       line.contains('naleznosc') ||
-      line.contains('należność');
+      line.contains('należność') ||
+      line.contains('kwota') ||
+      line == 'total';
 }
 
 bool _shouldSkipLine(String line) {
@@ -203,13 +223,29 @@ bool _shouldSkipLine(String line) {
     'nr paragonu',
     'numer',
     'www',
+    'bon',
+    'rabat',
   ];
   return skipped.any((word) => line.contains(word));
 }
 
+_Price? _nearbyPrice(List<String> lines, int index) {
+  for (final offset in [0, 1, -1, 2]) {
+    final nextIndex = index + offset;
+    if (nextIndex < 0 || nextIndex >= lines.length) {
+      continue;
+    }
+    final price = _lastPrice(lines[nextIndex]);
+    if (price != null) {
+      return price;
+    }
+  }
+  return null;
+}
+
 _Price? _lastPrice(String line) {
   final matches = RegExp(
-    r'(\d+[,.]\d{2})(?:\s*(?:zł|zl|pln|[A-Z]))?\s*$',
+    r'(?<!\d)(\d{1,5}[,.]\d{2})(?:\s*(?:zł|zl|pln|[A-Z]))?(?=\s|$)',
     caseSensitive: false,
   ).allMatches(line);
   final match = matches.isEmpty ? null : matches.last;
@@ -223,20 +259,24 @@ _Price? _lastPrice(String line) {
   );
 }
 
+bool _lineHasOnlyPrice(String line) {
+  final price = _lastPrice(line);
+  if (price == null) {
+    return false;
+  }
+  final stripped = line
+      .replaceAll(price.raw, '')
+      .replaceAll(RegExp(r'\b(zł|zl|pln|[A-Z])\b', caseSensitive: false), '')
+      .replaceAll(RegExp(r'[\s:;.-]+'), '');
+  return stripped.isEmpty;
+}
+
 final _quantityPattern = RegExp(
   r'(\d+(?:[,.]\d+)?)\s*(kg|g|l|ml|szt|op|opak)\.?',
   caseSensitive: false,
 );
 
 _ParsedQuantity _quantityFromLine(String line) {
-  final quantityMatch = _quantityPattern.firstMatch(line);
-  if (quantityMatch != null) {
-    return _ParsedQuantity(
-      quantity: doubleFromJson(quantityMatch.group(1)),
-      unit: quantityMatch.group(2) ?? 'szt.',
-    );
-  }
-
   final multiplierMatch = RegExp(
     r'\b(\d+(?:[,.]\d+)?)\s*x\b',
     caseSensitive: false,
@@ -248,7 +288,52 @@ _ParsedQuantity _quantityFromLine(String line) {
     );
   }
 
+  final quantityMatch = _quantityPattern.firstMatch(line);
+  if (quantityMatch != null) {
+    return _ParsedQuantity(
+      quantity: doubleFromJson(quantityMatch.group(1)),
+      unit: quantityMatch.group(2) ?? 'szt.',
+    );
+  }
+
   return const _ParsedQuantity(quantity: 1, unit: 'szt.');
+}
+
+String _normalizeForSearch(String value) {
+  return value
+      .toLowerCase()
+      .replaceAll('ą', 'a')
+      .replaceAll('ć', 'c')
+      .replaceAll('ę', 'e')
+      .replaceAll('ł', 'l')
+      .replaceAll('ń', 'n')
+      .replaceAll('ó', 'o')
+      .replaceAll('ś', 's')
+      .replaceAll('ź', 'z')
+      .replaceAll('ż', 'z')
+      .replaceAll(RegExp(r'[^a-z0-9,. ]'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
+String _titleCase(String value) {
+  return value
+      .split(' ')
+      .where((part) => part.isNotEmpty)
+      .map((part) {
+        if (part.length <= 2 && part == part.toUpperCase()) {
+          return part;
+        }
+        return part[0].toUpperCase() + part.substring(1).toLowerCase();
+      })
+      .join(' ');
+}
+
+String _titleCaseProduct(String value) {
+  if (value == value.toUpperCase()) {
+    return _titleCase(value);
+  }
+  return value;
 }
 
 class _Price {

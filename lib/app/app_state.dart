@@ -223,6 +223,38 @@ class AppState extends ChangeNotifier {
       throw const AppActionException('Nie znaleziono rodziny z takim kodem.');
     }
 
+    var remoteMembers = <Member>[];
+    try {
+      remoteMembers = await syncService.fetchMembers(remoteFamily.id);
+    } catch (_) {
+      remoteMembers = [];
+    }
+    final existingMember = _matchingMemberForJoin(
+      remoteMembers,
+      memberName: memberName,
+      email: email,
+      phone: phone,
+    );
+    if (existingMember != null) {
+      final draftData = AppData.empty().copyWith(
+        family: remoteFamily.copyWith(
+          syncStatus: SyncStatus.synced,
+          createOnSync: false,
+        ),
+        currentMember: existingMember.copyWith(syncStatus: SyncStatus.synced),
+        members: remoteMembers,
+      );
+      try {
+        final syncedData = await syncService.sync(draftData);
+        await _replaceAfterRemoteSync(syncedData);
+        return;
+      } catch (error) {
+        throw AppActionException(
+          'Nie udało się zalogować na istniejące konto: $error',
+        );
+      }
+    }
+
     final member = Member(
       id: memberId,
       familyId: remoteFamily.id,
@@ -546,10 +578,17 @@ class AppState extends ChangeNotifier {
     await _persist(scheduleSync: true);
   }
 
-  Future<void> addReceiptItemsToShoppingList(Receipt receipt) async {
+  Future<int> addReceiptItemsToShoppingList(
+    Receipt receipt, {
+    Set<int> excludedIndexes = const {},
+  }) async {
     final now = DateTime.now().toUtc();
-    var addedAny = false;
-    for (final item in receipt.items) {
+    var addedCount = 0;
+    for (var index = 0; index < receipt.items.length; index++) {
+      if (excludedIndexes.contains(index)) {
+        continue;
+      }
+      final item = receipt.items[index];
       if (item.name.trim().isEmpty || item.quantity <= 0) {
         continue;
       }
@@ -559,11 +598,12 @@ class AppState extends ChangeNotifier {
         unit: item.unit,
         now: now,
       );
-      addedAny = true;
+      addedCount++;
     }
-    if (addedAny) {
+    if (addedCount > 0) {
       await _persist(scheduleSync: true);
     }
+    return addedCount;
   }
 
   Future<void> addMealWithRecipe({
@@ -848,6 +888,29 @@ class AppState extends ChangeNotifier {
       return;
     }
     await _persist(scheduleSync: true);
+  }
+
+  Future<int> addIngredientsToShoppingList(
+    List<IngredientDraft> ingredients,
+  ) async {
+    final now = DateTime.now().toUtc();
+    var addedCount = 0;
+    for (final item in mergeIngredientDrafts(ingredients)) {
+      if (item.name.trim().isEmpty || item.quantity <= 0) {
+        continue;
+      }
+      _mergeShoppingItem(
+        name: item.name,
+        quantity: item.quantity,
+        unit: item.unit,
+        now: now,
+      );
+      addedCount++;
+    }
+    if (addedCount > 0) {
+      await _persist(scheduleSync: true);
+    }
+    return addedCount;
   }
 
   Future<void> addMealPlanToCalendar({
@@ -1657,6 +1720,34 @@ class AppState extends ChangeNotifier {
     return first.toUtc().year == second.toUtc().year &&
         first.toUtc().month == second.toUtc().month &&
         first.toUtc().day == second.toUtc().day;
+  }
+
+  Member? _matchingMemberForJoin(
+    List<Member> members, {
+    required String memberName,
+    String? email,
+    String? phone,
+  }) {
+    final cleanEmail = nullableString(email)?.toLowerCase();
+    final cleanPhone = nullableString(phone)?.replaceAll(RegExp(r'\s+'), '');
+    final cleanName = normalizeName(memberName);
+
+    for (final member in members.where((member) => !member.isDeleted)) {
+      if (cleanEmail != null && member.email?.toLowerCase() == cleanEmail) {
+        return member;
+      }
+      if (cleanPhone != null &&
+          member.phone?.replaceAll(RegExp(r'\s+'), '') == cleanPhone) {
+        return member;
+      }
+    }
+
+    for (final member in members.where((member) => !member.isDeleted)) {
+      if (normalizeName(member.name) == cleanName) {
+        return member;
+      }
+    }
+    return null;
   }
 }
 

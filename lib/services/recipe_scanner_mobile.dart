@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
 
-class ReceiptScanResult {
-  const ReceiptScanResult({
+class RecipeImageScanResult {
+  const RecipeImageScanResult({
     required this.text,
     required this.imageData,
     required this.imageMimeType,
@@ -16,8 +16,8 @@ class ReceiptScanResult {
   final String imageMimeType;
 }
 
-class ReceiptScanException implements Exception {
-  const ReceiptScanException(this.message);
+class RecipeScanException implements Exception {
+  const RecipeScanException(this.message);
 
   final String message;
 
@@ -25,11 +25,11 @@ class ReceiptScanException implements Exception {
   String toString() => message;
 }
 
-bool get receiptCameraScannerSupported => Platform.isAndroid || Platform.isIOS;
+bool get recipeCameraScannerSupported => Platform.isAndroid || Platform.isIOS;
 
-Future<ReceiptScanResult?> scanReceiptFromCamera() async {
-  if (!receiptCameraScannerSupported) {
-    throw const ReceiptScanException(
+Future<RecipeImageScanResult?> scanRecipeFromCamera() async {
+  if (!recipeCameraScannerSupported) {
+    throw const RecipeScanException(
       'Skaner aparatem działa w aplikacji Android/iOS.',
     );
   }
@@ -37,8 +37,8 @@ Future<ReceiptScanResult?> scanReceiptFromCamera() async {
   final picker = ImagePicker();
   final image = await picker.pickImage(
     source: ImageSource.camera,
-    imageQuality: 85,
-    maxWidth: 1800,
+    imageQuality: 70,
+    maxWidth: 1400,
   );
   if (image == null) {
     return null;
@@ -49,13 +49,13 @@ Future<ReceiptScanResult?> scanReceiptFromCamera() async {
     final bytes = await image.readAsBytes();
     final inputImage = InputImage.fromFilePath(image.path);
     final recognizedText = await recognizer.processImage(inputImage);
-    return ReceiptScanResult(
+    return RecipeImageScanResult(
       text: recognizedText.text,
       imageData: base64Encode(bytes),
       imageMimeType: image.mimeType ?? 'image/jpeg',
     );
   } catch (error) {
-    throw ReceiptScanException('Nie udało się odczytać paragonu: $error');
+    throw RecipeScanException('Nie udało się odczytać przepisu: $error');
   } finally {
     await recognizer.close();
   }
