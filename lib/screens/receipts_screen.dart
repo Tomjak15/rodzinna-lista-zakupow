@@ -164,97 +164,95 @@ class _ReceiptTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appState = AppScope.of(context);
+    final hasPhoto = _decodeReceiptImage(receipt.imageData) != null;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ExpansionTile(
-        leading: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: receipt.imageData == null
-              ? null
-              : () => _showReceiptPhoto(context, receipt),
-          child: _ReceiptThumbnail(receipt: receipt),
-        ),
-        title: Text(receipt.storeName.isEmpty ? 'Sklep' : receipt.storeName),
-        subtitle: Text(
-          '${_formatMoney(receipt.total)} - '
-          '${DateFormat('dd.MM.yyyy, HH:mm').format(receipt.purchasedAt.toLocal())}',
-        ),
+      child: Column(
         children: [
-          if (receipt.imageData != null) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: _ReceiptPhotoPreview(
-                imageData: receipt.imageData,
-                onTap: () => _showReceiptPhoto(context, receipt),
-              ),
+          ListTile(
+            leading: _ReceiptThumbnail(receipt: receipt),
+            title: Text(
+              receipt.storeName.isEmpty ? 'Sklep' : receipt.storeName,
             ),
-          ],
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Produkty',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
+            subtitle: Text(
+              '${_formatMoney(receipt.total)} - '
+              '${DateFormat('dd.MM.yyyy, HH:mm').format(receipt.purchasedAt.toLocal())}',
             ),
+            onTap: hasPhoto ? () => _showReceiptPhoto(context, receipt) : null,
+            trailing: hasPhoto
+                ? const Icon(Icons.zoom_out_map_outlined)
+                : IconButton(
+                    tooltip: 'Usuń',
+                    onPressed: () => appState.deleteReceipt(receipt),
+                    icon: const Icon(Icons.delete_outline),
+                  ),
           ),
-          if (receipt.items.isEmpty)
-            const ListTile(title: Text('Brak zapisanych produktów'))
-          else
-            ...receipt.items.map(
-              (item) => ListTile(
-                dense: true,
-                title: Text(item.name),
-                subtitle: Text(
-                  '${formatQuantity(item.quantity)} ${item.unit} - '
-                  '${_formatMoney(item.price)}',
-                ),
-              ),
-            ),
-          OverflowBar(
+          ExpansionTile(
+            tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+            childrenPadding: const EdgeInsets.only(bottom: 8),
+            title: Text('Produkty (${receipt.items.length})'),
+            subtitle: hasPhoto
+                ? const Text('Dotknij paragonu wyżej, żeby zobaczyć zdjęcie')
+                : null,
             children: [
-              TextButton.icon(
-                onPressed: receipt.imageData == null
-                    ? null
-                    : () => _showReceiptPhoto(context, receipt),
-                icon: const Icon(Icons.image_outlined),
-                label: const Text('Zdjęcie'),
-              ),
-              TextButton.icon(
-                onPressed: receipt.items.isEmpty
-                    ? null
-                    : () async {
-                        final excludedIndexes =
-                            await _openReceiptShoppingSelection(
-                              context,
-                              receipt,
-                            );
-                        if (excludedIndexes == null || !context.mounted) {
-                          return;
-                        }
-                        final addedCount = await appState
-                            .addReceiptItemsToShoppingList(
-                              receipt,
-                              excludedIndexes: excludedIndexes,
-                            );
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Dodano $addedCount produktów do listy.',
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                icon: const Icon(Icons.add_shopping_cart),
-                label: const Text('Do listy'),
-              ),
-              TextButton.icon(
-                onPressed: () => appState.deleteReceipt(receipt),
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('Usuń'),
+              if (receipt.items.isEmpty)
+                const ListTile(title: Text('Brak zapisanych produktów'))
+              else
+                ...receipt.items.map(
+                  (item) => ListTile(
+                    dense: true,
+                    title: Text(item.name),
+                    subtitle: Text(
+                      '${formatQuantity(item.quantity)} ${item.unit} - '
+                      '${_formatMoney(item.price)}',
+                    ),
+                  ),
+                ),
+              OverflowBar(
+                children: [
+                  TextButton.icon(
+                    onPressed: hasPhoto
+                        ? () => _showReceiptPhoto(context, receipt)
+                        : null,
+                    icon: const Icon(Icons.image_outlined),
+                    label: const Text('Zdjęcie'),
+                  ),
+                  TextButton.icon(
+                    onPressed: receipt.items.isEmpty
+                        ? null
+                        : () async {
+                            final excludedIndexes =
+                                await _openReceiptShoppingSelection(
+                                  context,
+                                  receipt,
+                                );
+                            if (excludedIndexes == null || !context.mounted) {
+                              return;
+                            }
+                            final addedCount = await appState
+                                .addReceiptItemsToShoppingList(
+                                  receipt,
+                                  excludedIndexes: excludedIndexes,
+                                );
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Dodano $addedCount produktów do listy.',
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                    icon: const Icon(Icons.add_shopping_cart),
+                    label: const Text('Do listy'),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => appState.deleteReceipt(receipt),
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('Usuń'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -344,8 +342,25 @@ class _ReceiptShoppingSelectionDialogState
 }
 
 void _showReceiptPhoto(BuildContext context, Receipt receipt) {
-  final bytes = _decodeReceiptImage(receipt.imageData);
+  _showReceiptPhotoData(
+    context,
+    imageData: receipt.imageData,
+    title: receipt.storeName.isEmpty ? 'Paragon' : receipt.storeName,
+    subtitle: _formatMoney(receipt.total),
+  );
+}
+
+void _showReceiptPhotoData(
+  BuildContext context, {
+  required String? imageData,
+  required String title,
+  String? subtitle,
+}) {
+  final bytes = _decodeReceiptImage(imageData);
   if (bytes == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Nie udało się otworzyć zdjęcia paragonu.')),
+    );
     return;
   }
   showDialog<void>(
@@ -355,10 +370,8 @@ void _showReceiptPhoto(BuildContext context, Receipt receipt) {
         child: Column(
           children: [
             ListTile(
-              title: Text(
-                receipt.storeName.isEmpty ? 'Paragon' : receipt.storeName,
-              ),
-              subtitle: Text(_formatMoney(receipt.total)),
+              title: Text(title),
+              subtitle: subtitle == null ? null : Text(subtitle),
               trailing: IconButton(
                 tooltip: 'Zamknij',
                 onPressed: () => Navigator.pop(context),
@@ -498,7 +511,19 @@ class _ReceiptEditorSheetState extends State<_ReceiptEditorSheet> {
               ),
               if (widget.imageData != null) ...[
                 const SizedBox(height: 8),
-                _ReceiptPhotoPreview(imageData: widget.imageData),
+                _ReceiptPhotoPreview(
+                  imageData: widget.imageData,
+                  onTap: () => _showReceiptPhotoData(
+                    context,
+                    imageData: widget.imageData,
+                    title: _storeController.text.trim().isEmpty
+                        ? 'Paragon'
+                        : _storeController.text.trim(),
+                    subtitle: _totalController.text.trim().isEmpty
+                        ? null
+                        : '${_totalController.text.trim()} zł',
+                  ),
+                ),
               ],
               const SizedBox(height: 12),
               TextFormField(
@@ -874,14 +899,23 @@ class _EmptyReceipts extends StatelessWidget {
 }
 
 Uint8List? _decodeReceiptImage(String? imageData) {
-  final normalized = imageData?.trim();
+  var normalized = imageData?.trim();
   if (normalized == null || normalized.isEmpty) {
     return null;
   }
+  final dataUrlSeparator = normalized.indexOf(',');
+  if (normalized.startsWith('data:image/') && dataUrlSeparator != -1) {
+    normalized = normalized.substring(dataUrlSeparator + 1);
+  }
+  normalized = normalized.replaceAll(RegExp(r'\s+'), '');
   try {
     return base64Decode(normalized);
   } on FormatException {
-    return null;
+    try {
+      return base64Url.decode(base64Url.normalize(normalized));
+    } on FormatException {
+      return null;
+    }
   }
 }
 

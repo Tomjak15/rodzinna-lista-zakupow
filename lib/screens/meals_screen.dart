@@ -936,7 +936,7 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
   late final TextEditingController _servingsController;
   bool _includeMain = true;
   late final Set<String> _selectedSubRecipes;
-  final Set<String> _ownedIngredientKeys = {};
+  final Set<String> _excludedIngredientKeys = {};
   String? _selectionError;
 
   @override
@@ -1064,7 +1064,7 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Zaznacz, co masz w domu',
+                  'Zaznacz składniki, których nie chcesz dodawać',
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
               ),
@@ -1079,13 +1079,13 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
                   final key = _ingredientKey(ingredient);
                   return CheckboxListTile(
                     contentPadding: EdgeInsets.zero,
-                    value: _ownedIngredientKeys.contains(key),
+                    value: _excludedIngredientKeys.contains(key),
                     onChanged: (value) {
                       setState(() {
                         if (value ?? false) {
-                          _ownedIngredientKeys.add(key);
+                          _excludedIngredientKeys.add(key);
                         } else {
-                          _ownedIngredientKeys.remove(key);
+                          _excludedIngredientKeys.remove(key);
                         }
                         _selectionError = null;
                       });
@@ -1137,12 +1137,12 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
             )
             .where(
               (ingredient) =>
-                  !_ownedIngredientKeys.contains(_ingredientKey(ingredient)),
+                  !_excludedIngredientKeys.contains(_ingredientKey(ingredient)),
             )
             .toList();
     if (ingredientsToAdd.isEmpty) {
       setState(() {
-        _selectionError = 'Wszystko zaznaczone jako masz w domu';
+        _selectionError = 'Wszystkie składniki są zaznaczone do pominięcia';
       });
       return;
     }
