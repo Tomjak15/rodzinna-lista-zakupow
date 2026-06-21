@@ -26,7 +26,7 @@ void main() {
     );
   });
 
-  test('licznik kcal zapisuje cel i wpis dnia', () async {
+  test('licznik zdrowia zapisuje cel i makro wpisu dnia', () async {
     final store = await LocalStore.create();
     final appState = AppState(store: store);
     addTearDown(appState.dispose);
@@ -38,16 +38,25 @@ void main() {
       (member) => member.name == 'Anna',
     );
 
-    await appState.saveNutritionGoal(dailyCalories: 2400, dailyProtein: 140);
+    await appState.saveNutritionGoal(
+      dailyCalories: 2400,
+      dailyProtein: 140,
+      dailyFat: 80,
+      dailyCarbs: 260,
+    );
     await appState.saveNutritionGoal(
       memberId: anna.id,
       dailyCalories: 1800,
       dailyProtein: 90,
+      dailyFat: 60,
+      dailyCarbs: 180,
     );
     await appState.addNutritionEntry(
       date: DateTime(2026, 6, 21),
       calories: 620,
       protein: 42,
+      fat: 18,
+      carbs: 74,
       note: 'Obiad',
     );
     await appState.addTrainingEntry(
@@ -60,6 +69,8 @@ void main() {
 
     expect(appState.nutritionGoalForMember(memberId)!.dailyCalories, 2400);
     expect(appState.nutritionGoalForMember(anna.id)!.dailyProtein, 90);
+    expect(appState.nutritionGoalForMember(memberId)!.dailyFat, 80);
+    expect(appState.nutritionGoalForMember(anna.id)!.dailyCarbs, 180);
     expect(
       appState.nutritionEntriesForDate(DateTime(2026, 6, 21)),
       hasLength(1),
@@ -67,6 +78,14 @@ void main() {
     expect(
       appState.nutritionEntriesForDate(DateTime(2026, 6, 21)).single.protein,
       42,
+    );
+    expect(
+      appState.nutritionEntriesForDate(DateTime(2026, 6, 21)).single.fat,
+      18,
+    );
+    expect(
+      appState.nutritionEntriesForDate(DateTime(2026, 6, 21)).single.carbs,
+      74,
     );
     expect(
       appState.trainingEntriesForDate(DateTime(2026, 6, 21)),
@@ -91,6 +110,8 @@ void main() {
       baseServings: 4,
       caloriesPerServing: 500,
       proteinPerServing: 35,
+      fatPerServing: 12,
+      carbsPerServing: 55,
       ingredients: const [
         IngredientDraft(name: 'Kurczak', quantity: 500, unit: 'g'),
       ],
@@ -100,8 +121,12 @@ void main() {
     expect(recipe.category, 'Anna');
     expect(recipe.caloriesPerServing, 500);
     expect(recipe.proteinPerServing, 35);
+    expect(recipe.fatPerServing, 12);
+    expect(recipe.carbsPerServing, 55);
     expect(recipe.toRemote()['calories_per_serving'], 500);
     expect(recipe.toRemote()['protein_per_serving'], 35);
+    expect(recipe.toRemote()['fat_per_serving'], 12);
+    expect(recipe.toRemote()['carbs_per_serving'], 55);
 
     await appState.updateRecipeCategory(recipe: recipe, category: 'Kaja');
 
@@ -110,7 +135,7 @@ void main() {
     expect(moved.toRemote()['recipe_category'], 'Kaja');
   });
 
-  test('zdrowie liczy kcal i bialko z procentu porcji przepisu', () async {
+  test('zdrowie liczy makro z procentu porcji przepisu', () async {
     final store = await LocalStore.create();
     final appState = AppState(store: store);
     addTearDown(appState.dispose);
@@ -123,6 +148,8 @@ void main() {
       baseServings: 2,
       caloriesPerServing: 500,
       proteinPerServing: 35,
+      fatPerServing: 20,
+      carbsPerServing: 45,
       ingredients: const [
         IngredientDraft(name: 'Kurczak', quantity: 200, unit: 'g'),
         IngredientDraft(name: 'Ryz', quantity: 100, unit: 'g'),
@@ -141,6 +168,8 @@ void main() {
         .single;
     expect(entry.calories, 400);
     expect(entry.protein, 28);
+    expect(entry.fat, 16);
+    expect(entry.carbs, 36);
     expect(entry.note, 'Kurczak z ryzem (80% porcji)');
   });
 }

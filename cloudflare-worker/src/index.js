@@ -1,4 +1,4 @@
-const schemaVersion = 5;
+const schemaVersion = 6;
 
 const tables = {
   families: {
@@ -73,6 +73,8 @@ const tables = {
       "base_servings",
       "calories_per_serving",
       "protein_per_serving",
+      "fat_per_serving",
+      "carbs_per_serving",
       "created_at",
       "updated_at",
       "created_by",
@@ -83,6 +85,8 @@ const tables = {
       "base_servings",
       "calories_per_serving",
       "protein_per_serving",
+      "fat_per_serving",
+      "carbs_per_serving",
     ],
   },
   recipe_ingredients: {
@@ -141,13 +145,20 @@ const tables = {
       "member_id",
       "daily_calories",
       "daily_protein",
+      "daily_fat",
+      "daily_carbs",
       "created_at",
       "updated_at",
       "created_by",
       "is_deleted",
     ],
     boolColumns: ["is_deleted"],
-    numberColumns: ["daily_calories", "daily_protein"],
+    numberColumns: [
+      "daily_calories",
+      "daily_protein",
+      "daily_fat",
+      "daily_carbs",
+    ],
   },
   nutrition_entries: {
     columns: [
@@ -157,6 +168,8 @@ const tables = {
       "entry_date",
       "calories",
       "protein",
+      "fat",
+      "carbs",
       "note",
       "created_at",
       "updated_at",
@@ -164,7 +177,7 @@ const tables = {
       "is_deleted",
     ],
     boolColumns: ["is_deleted"],
-    numberColumns: ["calories", "protein"],
+    numberColumns: ["calories", "protein", "fat", "carbs"],
   },
   training_entries: {
     columns: [
@@ -559,7 +572,7 @@ async function scanRecipeWithOpenAi({ apiKey, model, text, imageData, imageMimeT
       type: "input_text",
       text: [
         "Odczytaj polski przepis kulinarny ze zdjęcia lub tekstu.",
-        "Zwróć tylko dane przepisu. Nie zgaduj agresywnie: jeśli kcal/białka nie ma, ustaw 0.",
+        "Zwróć tylko dane przepisu. Nie zgaduj agresywnie: jeśli kcal, białka, tłuszczu albo węglowodanów nie ma, ustaw 0.",
         "Kategorie dozwolone: Śniadania, Obiady, Kolacje, Przekąski, Desery, Napoje, Anna, Kaja, Maciej, Tomek.",
         "Normalizuj składniki do pól: nazwa, ilość, jednostka. Instrukcję zapisz po polsku.",
         text ? `Tekst OCR/użytkownika:\n${text}` : "",
@@ -623,6 +636,8 @@ function recipeScanJsonSchema() {
       "baseServings",
       "caloriesPerServing",
       "proteinPerServing",
+      "fatPerServing",
+      "carbsPerServing",
       "ingredients",
     ],
     properties: {
@@ -635,6 +650,8 @@ function recipeScanJsonSchema() {
       baseServings: { type: "integer", minimum: 1 },
       caloriesPerServing: { type: "integer", minimum: 0 },
       proteinPerServing: { type: "number", minimum: 0 },
+      fatPerServing: { type: "number", minimum: 0 },
+      carbsPerServing: { type: "number", minimum: 0 },
       ingredients: {
         type: "array",
         minItems: 1,
@@ -721,7 +738,18 @@ function parseRecipeTextFallback(text) {
     instructions: instructionLines.join("\n").trim(),
     baseServings,
     caloriesPerServing: findNutrition(text, /(\d{2,5})\s*kcal/i),
-    proteinPerServing: findNutrition(text, /(\d+(?:[,.]\d+)?)\s*g\s*(?:białka|bialka|protein)/i),
+    proteinPerServing: findNutrition(
+      text,
+      /(\d+(?:[,.]\d+)?)\s*g\s*(?:białka|bialka|protein)/i,
+    ),
+    fatPerServing: findNutrition(
+      text,
+      /(\d+(?:[,.]\d+)?)\s*g\s*(?:tłuszczu|tluszczu|tłuszcze|tluszcze|fat)/i,
+    ),
+    carbsPerServing: findNutrition(
+      text,
+      /(\d+(?:[,.]\d+)?)\s*g\s*(?:węglowodanów|weglowodanow|węgle|wegle|carbs|carbohydrates)/i,
+    ),
     ingredients,
   };
 }
@@ -785,6 +813,8 @@ function normalizeRecipeScanDraft(value) {
       Math.round(Number(value.caloriesPerServing || 0)),
     ),
     proteinPerServing: Math.max(0, Number(value.proteinPerServing || 0)),
+    fatPerServing: Math.max(0, Number(value.fatPerServing || 0)),
+    carbsPerServing: Math.max(0, Number(value.carbsPerServing || 0)),
     ingredients,
   };
 }

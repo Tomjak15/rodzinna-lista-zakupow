@@ -91,6 +91,8 @@ const tables = {
       "base_servings",
       "calories_per_serving",
       "protein_per_serving",
+      "fat_per_serving",
+      "carbs_per_serving",
       "created_at",
       "updated_at",
       "created_by",
@@ -101,6 +103,8 @@ const tables = {
       "base_servings",
       "calories_per_serving",
       "protein_per_serving",
+      "fat_per_serving",
+      "carbs_per_serving",
     ],
   },
   recipe_ingredients: {
@@ -159,13 +163,20 @@ const tables = {
       "member_id",
       "daily_calories",
       "daily_protein",
+      "daily_fat",
+      "daily_carbs",
       "created_at",
       "updated_at",
       "created_by",
       "is_deleted",
     ],
     boolColumns: ["is_deleted"],
-    numberColumns: ["daily_calories", "daily_protein"],
+    numberColumns: [
+      "daily_calories",
+      "daily_protein",
+      "daily_fat",
+      "daily_carbs",
+    ],
   },
   nutrition_entries: {
     columns: [
@@ -175,6 +186,8 @@ const tables = {
       "entry_date",
       "calories",
       "protein",
+      "fat",
+      "carbs",
       "note",
       "created_at",
       "updated_at",
@@ -182,7 +195,7 @@ const tables = {
       "is_deleted",
     ],
     boolColumns: ["is_deleted"],
-    numberColumns: ["calories", "protein"],
+    numberColumns: ["calories", "protein", "fat", "carbs"],
   },
   training_entries: {
     columns: [
@@ -247,7 +260,7 @@ app.get("/", (_req, res) => {
   res.json({
     name: "Rodzinna Lista Zakupów API",
     status: "ok",
-    schemaVersion: 5,
+    schemaVersion: 6,
     health: "/api/health",
   });
 });
@@ -262,7 +275,7 @@ app.get("/api/health", (_req, res) => {
 
   res.json({
     ok: missingTables.length === 0,
-    schemaVersion: 5,
+    schemaVersion: 6,
     database: path.basename(dbPath),
     dbPath,
     expectedTables,
@@ -397,6 +410,8 @@ function initializeDatabase() {
       base_servings integer not null default 4,
       calories_per_serving integer not null default 0,
       protein_per_serving real not null default 0,
+      fat_per_serving real not null default 0,
+      carbs_per_serving real not null default 0,
       created_at text not null,
       updated_at text not null,
       created_by text not null,
@@ -449,6 +464,8 @@ function initializeDatabase() {
       member_id text not null references members(id) on delete cascade,
       daily_calories integer not null default 0,
       daily_protein real not null default 0,
+      daily_fat real not null default 0,
+      daily_carbs real not null default 0,
       created_at text not null,
       updated_at text not null,
       created_by text not null,
@@ -462,6 +479,8 @@ function initializeDatabase() {
       entry_date text not null,
       calories integer not null default 0,
       protein real not null default 0,
+      fat real not null default 0,
+      carbs real not null default 0,
       note text not null default '',
       created_at text not null,
       updated_at text not null,
@@ -539,6 +558,12 @@ function initializeDatabase() {
   ensureColumn("recipes", "recipe_category", "text not null default 'Obiady'");
   ensureColumn("recipes", "calories_per_serving", "integer not null default 0");
   ensureColumn("recipes", "protein_per_serving", "real not null default 0");
+  ensureColumn("recipes", "fat_per_serving", "real not null default 0");
+  ensureColumn("recipes", "carbs_per_serving", "real not null default 0");
+  ensureColumn("nutrition_goals", "daily_fat", "real not null default 0");
+  ensureColumn("nutrition_goals", "daily_carbs", "real not null default 0");
+  ensureColumn("nutrition_entries", "fat", "real not null default 0");
+  ensureColumn("nutrition_entries", "carbs", "real not null default 0");
   ensureColumn("receipts", "image_data", "text");
   ensureColumn("receipts", "image_mime_type", "text");
 }
@@ -740,7 +765,7 @@ async function scanRecipeWithOpenAi({ apiKey, model, text, imageData, imageMimeT
       type: "input_text",
       text: [
         "Odczytaj polski przepis kulinarny ze zdjęcia lub tekstu.",
-        "Zwróć tylko dane przepisu. Nie zgaduj agresywnie: jeśli kcal/białka nie ma, ustaw 0.",
+        "Zwróć tylko dane przepisu. Nie zgaduj agresywnie: jeśli kcal, białka, tłuszczu albo węglowodanów nie ma, ustaw 0.",
         "Kategorie dozwolone: Śniadania, Obiady, Kolacje, Przekąski, Desery, Napoje, Anna, Kaja, Maciej, Tomek.",
         "Normalizuj składniki do pól: nazwa, ilość, jednostka. Instrukcję zapisz po polsku.",
         text ? `Tekst OCR/użytkownika:\n${text}` : "",
@@ -804,6 +829,8 @@ function recipeScanJsonSchema() {
       "baseServings",
       "caloriesPerServing",
       "proteinPerServing",
+      "fatPerServing",
+      "carbsPerServing",
       "ingredients",
     ],
     properties: {
@@ -827,6 +854,8 @@ function recipeScanJsonSchema() {
       baseServings: { type: "integer", minimum: 1 },
       caloriesPerServing: { type: "integer", minimum: 0 },
       proteinPerServing: { type: "number", minimum: 0 },
+      fatPerServing: { type: "number", minimum: 0 },
+      carbsPerServing: { type: "number", minimum: 0 },
       ingredients: {
         type: "array",
         minItems: 1,
@@ -913,7 +942,18 @@ function parseRecipeTextFallback(text) {
     instructions: instructionLines.join("\n").trim(),
     baseServings,
     caloriesPerServing: findNutrition(text, /(\d{2,5})\s*kcal/i),
-    proteinPerServing: findNutrition(text, /(\d+(?:[,.]\d+)?)\s*g\s*(?:białka|bialka|protein)/i),
+    proteinPerServing: findNutrition(
+      text,
+      /(\d+(?:[,.]\d+)?)\s*g\s*(?:białka|bialka|protein)/i,
+    ),
+    fatPerServing: findNutrition(
+      text,
+      /(\d+(?:[,.]\d+)?)\s*g\s*(?:tłuszczu|tluszczu|tłuszcze|tluszcze|fat)/i,
+    ),
+    carbsPerServing: findNutrition(
+      text,
+      /(\d+(?:[,.]\d+)?)\s*g\s*(?:węglowodanów|weglowodanow|węgle|wegle|carbs|carbohydrates)/i,
+    ),
     ingredients,
   };
 }
@@ -977,6 +1017,8 @@ function normalizeRecipeScanDraft(value) {
       Math.round(Number(value.caloriesPerServing || 0)),
     ),
     proteinPerServing: Math.max(0, Number(value.proteinPerServing || 0)),
+    fatPerServing: Math.max(0, Number(value.fatPerServing || 0)),
+    carbsPerServing: Math.max(0, Number(value.carbsPerServing || 0)),
     ingredients,
   };
 }

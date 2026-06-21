@@ -731,6 +731,8 @@ class Recipe {
     required this.baseServings,
     required this.caloriesPerServing,
     required this.proteinPerServing,
+    required this.fatPerServing,
+    required this.carbsPerServing,
     required this.createdAt,
     required this.updatedAt,
     required this.createdBy,
@@ -759,6 +761,12 @@ class Recipe {
       proteinPerServing: doubleFromJson(
         json['proteinPerServing'] ?? json['protein_per_serving'],
       ),
+      fatPerServing: doubleFromJson(
+        json['fatPerServing'] ?? json['fat_per_serving'],
+      ),
+      carbsPerServing: doubleFromJson(
+        json['carbsPerServing'] ?? json['carbs_per_serving'],
+      ),
       createdAt: dateFromJson(json['createdAt'] ?? json['created_at']),
       updatedAt: dateFromJson(json['updatedAt'] ?? json['updated_at']),
       createdBy:
@@ -780,6 +788,8 @@ class Recipe {
       baseServings: intFromJson(json['base_servings']),
       caloriesPerServing: intFromJson(json['calories_per_serving']),
       proteinPerServing: doubleFromJson(json['protein_per_serving']),
+      fatPerServing: doubleFromJson(json['fat_per_serving']),
+      carbsPerServing: doubleFromJson(json['carbs_per_serving']),
       createdAt: dateFromJson(json['created_at']),
       updatedAt: dateFromJson(json['updated_at']),
       createdBy: json['created_by']?.toString() ?? '',
@@ -798,6 +808,8 @@ class Recipe {
   final int baseServings;
   final int caloriesPerServing;
   final double proteinPerServing;
+  final double fatPerServing;
+  final double carbsPerServing;
   final DateTime createdAt;
   final DateTime updatedAt;
   final String createdBy;
@@ -818,6 +830,8 @@ class Recipe {
       'baseServings': baseServings,
       'caloriesPerServing': caloriesPerServing,
       'proteinPerServing': proteinPerServing,
+      'fatPerServing': fatPerServing,
+      'carbsPerServing': carbsPerServing,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'createdBy': createdBy,
@@ -838,6 +852,8 @@ class Recipe {
       'base_servings': baseServings,
       'calories_per_serving': caloriesPerServing,
       'protein_per_serving': proteinPerServing,
+      'fat_per_serving': fatPerServing,
+      'carbs_per_serving': carbsPerServing,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
       'created_by': createdBy,
@@ -856,6 +872,8 @@ class Recipe {
     int? baseServings,
     int? caloriesPerServing,
     double? proteinPerServing,
+    double? fatPerServing,
+    double? carbsPerServing,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? createdBy,
@@ -873,6 +891,8 @@ class Recipe {
       baseServings: baseServings ?? this.baseServings,
       caloriesPerServing: caloriesPerServing ?? this.caloriesPerServing,
       proteinPerServing: proteinPerServing ?? this.proteinPerServing,
+      fatPerServing: fatPerServing ?? this.fatPerServing,
+      carbsPerServing: carbsPerServing ?? this.carbsPerServing,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       createdBy: createdBy ?? this.createdBy,
@@ -1260,6 +1280,8 @@ class NutritionGoal {
     required this.memberId,
     required this.dailyCalories,
     required this.dailyProtein,
+    required this.dailyFat,
+    required this.dailyCarbs,
     required this.createdAt,
     required this.updatedAt,
     required this.createdBy,
@@ -1278,6 +1300,8 @@ class NutritionGoal {
       dailyProtein: doubleFromJson(
         json['dailyProtein'] ?? json['daily_protein'],
       ),
+      dailyFat: doubleFromJson(json['dailyFat'] ?? json['daily_fat']),
+      dailyCarbs: doubleFromJson(json['dailyCarbs'] ?? json['daily_carbs']),
       createdAt: dateFromJson(json['createdAt'] ?? json['created_at']),
       updatedAt: dateFromJson(json['updatedAt'] ?? json['updated_at']),
       createdBy:
@@ -1294,6 +1318,8 @@ class NutritionGoal {
       memberId: json['member_id'].toString(),
       dailyCalories: intFromJson(json['daily_calories']),
       dailyProtein: doubleFromJson(json['daily_protein']),
+      dailyFat: doubleFromJson(json['daily_fat']),
+      dailyCarbs: doubleFromJson(json['daily_carbs']),
       createdAt: dateFromJson(json['created_at']),
       updatedAt: dateFromJson(json['updated_at']),
       createdBy: json['created_by']?.toString() ?? '',
@@ -1307,6 +1333,8 @@ class NutritionGoal {
   final String memberId;
   final int dailyCalories;
   final double dailyProtein;
+  final double dailyFat;
+  final double dailyCarbs;
   final DateTime createdAt;
   final DateTime updatedAt;
   final String createdBy;
@@ -1320,6 +1348,8 @@ class NutritionGoal {
       'memberId': memberId,
       'dailyCalories': dailyCalories,
       'dailyProtein': dailyProtein,
+      'dailyFat': dailyFat,
+      'dailyCarbs': dailyCarbs,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'createdBy': createdBy,
@@ -1335,6 +1365,8 @@ class NutritionGoal {
       'member_id': memberId,
       'daily_calories': dailyCalories,
       'daily_protein': dailyProtein,
+      'daily_fat': dailyFat,
+      'daily_carbs': dailyCarbs,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
       'created_by': createdBy,
@@ -1348,6 +1380,8 @@ class NutritionGoal {
     String? memberId,
     int? dailyCalories,
     double? dailyProtein,
+    double? dailyFat,
+    double? dailyCarbs,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? createdBy,
@@ -1360,6 +1394,8 @@ class NutritionGoal {
       memberId: memberId ?? this.memberId,
       dailyCalories: dailyCalories ?? this.dailyCalories,
       dailyProtein: dailyProtein ?? this.dailyProtein,
+      dailyFat: dailyFat ?? this.dailyFat,
+      dailyCarbs: dailyCarbs ?? this.dailyCarbs,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       createdBy: createdBy ?? this.createdBy,
@@ -1377,6 +1413,8 @@ class NutritionEntry {
     required this.date,
     required this.calories,
     required this.protein,
+    required this.fat,
+    required this.carbs,
     required this.note,
     required this.createdAt,
     required this.updatedAt,
@@ -1393,6 +1431,8 @@ class NutritionEntry {
       date: dateFromJson(json['date'] ?? json['entry_date']),
       calories: intFromJson(json['calories']),
       protein: doubleFromJson(json['protein']),
+      fat: doubleFromJson(json['fat']),
+      carbs: doubleFromJson(json['carbs']),
       note: json['note']?.toString() ?? '',
       createdAt: dateFromJson(json['createdAt'] ?? json['created_at']),
       updatedAt: dateFromJson(json['updatedAt'] ?? json['updated_at']),
@@ -1411,6 +1451,8 @@ class NutritionEntry {
       date: dateFromJson(json['entry_date']),
       calories: intFromJson(json['calories']),
       protein: doubleFromJson(json['protein']),
+      fat: doubleFromJson(json['fat']),
+      carbs: doubleFromJson(json['carbs']),
       note: json['note']?.toString() ?? '',
       createdAt: dateFromJson(json['created_at']),
       updatedAt: dateFromJson(json['updated_at']),
@@ -1426,6 +1468,8 @@ class NutritionEntry {
   final DateTime date;
   final int calories;
   final double protein;
+  final double fat;
+  final double carbs;
   final String note;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -1441,6 +1485,8 @@ class NutritionEntry {
       'date': date.toIso8601String(),
       'calories': calories,
       'protein': protein,
+      'fat': fat,
+      'carbs': carbs,
       'note': note,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
@@ -1458,6 +1504,8 @@ class NutritionEntry {
       'entry_date': date.toIso8601String(),
       'calories': calories,
       'protein': protein,
+      'fat': fat,
+      'carbs': carbs,
       'note': note,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -1473,6 +1521,8 @@ class NutritionEntry {
     DateTime? date,
     int? calories,
     double? protein,
+    double? fat,
+    double? carbs,
     String? note,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -1487,6 +1537,8 @@ class NutritionEntry {
       date: date ?? this.date,
       calories: calories ?? this.calories,
       protein: protein ?? this.protein,
+      fat: fat ?? this.fat,
+      carbs: carbs ?? this.carbs,
       note: note ?? this.note,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

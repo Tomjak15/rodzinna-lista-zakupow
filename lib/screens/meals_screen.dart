@@ -478,6 +478,8 @@ class _RecipeDraft {
     required this.baseServings,
     required this.caloriesPerServing,
     required this.proteinPerServing,
+    required this.fatPerServing,
+    required this.carbsPerServing,
     required this.ingredients,
   });
 
@@ -492,6 +494,8 @@ class _RecipeDraft {
       baseServings: draft.baseServings,
       caloriesPerServing: draft.caloriesPerServing,
       proteinPerServing: draft.proteinPerServing,
+      fatPerServing: draft.fatPerServing,
+      carbsPerServing: draft.carbsPerServing,
       ingredients: draft.ingredients,
     );
   }
@@ -502,6 +506,8 @@ class _RecipeDraft {
   final int baseServings;
   final int caloriesPerServing;
   final double proteinPerServing;
+  final double fatPerServing;
+  final double carbsPerServing;
   final List<IngredientDraft> ingredients;
 }
 
@@ -530,6 +536,8 @@ class _RecipeDialogState extends State<_RecipeDialog> {
   late final TextEditingController _servingsController;
   late final TextEditingController _caloriesController;
   late final TextEditingController _proteinController;
+  late final TextEditingController _fatController;
+  late final TextEditingController _carbsController;
   late final List<_IngredientLineController> _ingredientLines;
 
   @override
@@ -568,6 +576,20 @@ class _RecipeDialogState extends State<_RecipeDialog> {
           ? formatQuantity(initialDraft.proteinPerServing)
           : '',
     );
+    _fatController = TextEditingController(
+      text: recipe != null && recipe.fatPerServing > 0
+          ? formatQuantity(recipe.fatPerServing)
+          : initialDraft != null && initialDraft.fatPerServing > 0
+          ? formatQuantity(initialDraft.fatPerServing)
+          : '',
+    );
+    _carbsController = TextEditingController(
+      text: recipe != null && recipe.carbsPerServing > 0
+          ? formatQuantity(recipe.carbsPerServing)
+          : initialDraft != null && initialDraft.carbsPerServing > 0
+          ? formatQuantity(initialDraft.carbsPerServing)
+          : '',
+    );
     final initialIngredients =
         widget.initialIngredients ?? initialDraft?.ingredients ?? const [];
     _ingredientLines = initialIngredients.isEmpty
@@ -584,6 +606,8 @@ class _RecipeDialogState extends State<_RecipeDialog> {
     _servingsController.dispose();
     _caloriesController.dispose();
     _proteinController.dispose();
+    _fatController.dispose();
+    _carbsController.dispose();
     for (final line in _ingredientLines) {
       line.dispose();
     }
@@ -667,6 +691,36 @@ class _RecipeDialogState extends State<_RecipeDialog> {
                   ],
                 ),
                 const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _fatController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Tłuszcze na porcję',
+                          suffixText: 'g',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _carbsController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Węglowodany na porcję',
+                          suffixText: 'g',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
                 TextFormField(
                   controller: _instructionsController,
                   minLines: 3,
@@ -736,6 +790,8 @@ class _RecipeDialogState extends State<_RecipeDialog> {
         baseServings: max(1, int.tryParse(_servingsController.text) ?? 1),
         caloriesPerServing: _parseInt(_caloriesController.text),
         proteinPerServing: _parseDouble(_proteinController.text),
+        fatPerServing: _parseDouble(_fatController.text),
+        carbsPerServing: _parseDouble(_carbsController.text),
         ingredients: ingredients,
       ),
     );
@@ -1141,6 +1197,8 @@ Future<void> _openMealDialog(
     baseServings: draft.baseServings,
     caloriesPerServing: draft.caloriesPerServing,
     proteinPerServing: draft.proteinPerServing,
+    fatPerServing: draft.fatPerServing,
+    carbsPerServing: draft.carbsPerServing,
     ingredients: draft.ingredients,
   );
 }
@@ -1178,6 +1236,8 @@ Future<void> _openRecipeDialog(
     baseServings: draft.baseServings,
     caloriesPerServing: draft.caloriesPerServing,
     proteinPerServing: draft.proteinPerServing,
+    fatPerServing: draft.fatPerServing,
+    carbsPerServing: draft.carbsPerServing,
     ingredients: draft.ingredients,
   );
 }
@@ -1203,6 +1263,8 @@ Future<void> _openSubRecipeDialog(
     baseServings: draft.baseServings,
     caloriesPerServing: draft.caloriesPerServing,
     proteinPerServing: draft.proteinPerServing,
+    fatPerServing: draft.fatPerServing,
+    carbsPerServing: draft.carbsPerServing,
     ingredients: draft.ingredients,
   );
 }
@@ -1256,7 +1318,10 @@ Future<void> _confirmDeleteMeal(BuildContext context, Meal meal) async {
 const recipeCategoryNames = ['Wszystkie', ...AppState.recipeCategories];
 
 String _recipeNutritionText(Recipe recipe) {
-  return '${recipe.caloriesPerServing} kcal / ${formatQuantity(recipe.proteinPerServing)} g białka na porcję';
+  return '${recipe.caloriesPerServing} kcal / '
+      '${formatQuantity(recipe.proteinPerServing)} g białka / '
+      '${formatQuantity(recipe.fatPerServing)} g tł. / '
+      '${formatQuantity(recipe.carbsPerServing)} g węgli na porcję';
 }
 
 int _parseInt(String value) {

@@ -8,6 +8,8 @@ class RecipeScanDraft {
     required this.baseServings,
     required this.caloriesPerServing,
     required this.proteinPerServing,
+    required this.fatPerServing,
+    required this.carbsPerServing,
     required this.ingredients,
   });
 
@@ -34,6 +36,8 @@ class RecipeScanDraft {
       baseServings: _toInt(json['baseServings'], fallback: 4).clamp(1, 99),
       caloriesPerServing: _toInt(json['caloriesPerServing']),
       proteinPerServing: _toDouble(json['proteinPerServing']),
+      fatPerServing: _toDouble(json['fatPerServing']),
+      carbsPerServing: _toDouble(json['carbsPerServing']),
       ingredients: ingredients,
     );
   }
@@ -44,6 +48,8 @@ class RecipeScanDraft {
   final int baseServings;
   final int caloriesPerServing;
   final double proteinPerServing;
+  final double fatPerServing;
+  final double carbsPerServing;
   final List<IngredientDraft> ingredients;
 }
 

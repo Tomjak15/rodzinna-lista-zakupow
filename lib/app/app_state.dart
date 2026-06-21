@@ -646,6 +646,8 @@ class AppState extends ChangeNotifier {
     required int baseServings,
     int caloriesPerServing = 0,
     double proteinPerServing = 0,
+    double fatPerServing = 0,
+    double carbsPerServing = 0,
     required List<IngredientDraft> ingredients,
   }) async {
     final family = _data.family;
@@ -677,6 +679,8 @@ class AppState extends ChangeNotifier {
       baseServings: max(1, baseServings),
       caloriesPerServing: max(0, caloriesPerServing),
       proteinPerServing: max(0, proteinPerServing).toDouble(),
+      fatPerServing: max(0, fatPerServing).toDouble(),
+      carbsPerServing: max(0, carbsPerServing).toDouble(),
       createdAt: now,
       updatedAt: now,
       createdBy: member.id,
@@ -703,6 +707,8 @@ class AppState extends ChangeNotifier {
     required int baseServings,
     int caloriesPerServing = 0,
     double proteinPerServing = 0,
+    double fatPerServing = 0,
+    double carbsPerServing = 0,
     required List<IngredientDraft> ingredients,
   }) async {
     final family = _data.family;
@@ -723,6 +729,8 @@ class AppState extends ChangeNotifier {
       baseServings: max(1, baseServings),
       caloriesPerServing: max(0, caloriesPerServing),
       proteinPerServing: max(0, proteinPerServing).toDouble(),
+      fatPerServing: max(0, fatPerServing).toDouble(),
+      carbsPerServing: max(0, carbsPerServing).toDouble(),
       createdAt: now,
       updatedAt: now,
       createdBy: member.id,
@@ -747,6 +755,8 @@ class AppState extends ChangeNotifier {
     required int baseServings,
     int caloriesPerServing = 0,
     double proteinPerServing = 0,
+    double fatPerServing = 0,
+    double carbsPerServing = 0,
     required List<IngredientDraft> ingredients,
   }) async {
     final now = DateTime.now().toUtc();
@@ -760,6 +770,8 @@ class AppState extends ChangeNotifier {
                   baseServings: max(1, baseServings),
                   caloriesPerServing: max(0, caloriesPerServing),
                   proteinPerServing: max(0, proteinPerServing).toDouble(),
+                  fatPerServing: max(0, fatPerServing).toDouble(),
+                  carbsPerServing: max(0, carbsPerServing).toDouble(),
                   updatedAt: now,
                   syncStatus: SyncStatus.pending,
                 )
@@ -1085,6 +1097,8 @@ class AppState extends ChangeNotifier {
     String? memberId,
     required int dailyCalories,
     required double dailyProtein,
+    double dailyFat = 0,
+    double dailyCarbs = 0,
   }) async {
     final family = _data.family;
     final member = _data.currentMember;
@@ -1111,6 +1125,8 @@ class AppState extends ChangeNotifier {
             memberId: targetMemberId,
             dailyCalories: max(0, dailyCalories),
             dailyProtein: max(0, dailyProtein).toDouble(),
+            dailyFat: max(0, dailyFat).toDouble(),
+            dailyCarbs: max(0, dailyCarbs).toDouble(),
             createdAt: now,
             updatedAt: now,
             createdBy: member.id,
@@ -1128,6 +1144,8 @@ class AppState extends ChangeNotifier {
     updated[index] = current.copyWith(
       dailyCalories: max(0, dailyCalories),
       dailyProtein: max(0, dailyProtein).toDouble(),
+      dailyFat: max(0, dailyFat).toDouble(),
+      dailyCarbs: max(0, dailyCarbs).toDouble(),
       updatedAt: now,
       syncStatus: SyncStatus.pending,
     );
@@ -1139,11 +1157,15 @@ class AppState extends ChangeNotifier {
     required DateTime date,
     required int calories,
     required double protein,
+    double fat = 0,
+    double carbs = 0,
     required String note,
   }) async {
     final family = _data.family;
     final member = _data.currentMember;
-    if (family == null || member == null || (calories <= 0 && protein <= 0)) {
+    if (family == null ||
+        member == null ||
+        (calories <= 0 && protein <= 0 && fat <= 0 && carbs <= 0)) {
       return;
     }
     final now = DateTime.now().toUtc();
@@ -1154,6 +1176,8 @@ class AppState extends ChangeNotifier {
       date: _dateOnlyUtc(date),
       calories: max(0, calories),
       protein: max(0, protein),
+      fat: max(0, fat),
+      carbs: max(0, carbs),
       note: note.trim(),
       createdAt: now,
       updatedAt: now,
@@ -1177,6 +1201,8 @@ class AppState extends ChangeNotifier {
       date: date,
       calories: (recipe.caloriesPerServing * multiplier).round(),
       protein: recipe.proteinPerServing * multiplier,
+      fat: recipe.fatPerServing * multiplier,
+      carbs: recipe.carbsPerServing * multiplier,
       note: '${recipe.name} (${_formatNumber(servingPercent)}% porcji)',
     );
   }

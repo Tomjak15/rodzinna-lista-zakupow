@@ -496,8 +496,12 @@ class _NutritionCalendar extends StatelessWidget {
       0,
       (sum, entry) => sum + entry.protein,
     );
+    final fat = entries.fold<double>(0, (sum, entry) => sum + entry.fat);
+    final carbs = entries.fold<double>(0, (sum, entry) => sum + entry.carbs);
     final calorieGoal = goal?.dailyCalories ?? 0;
     final proteinGoal = goal?.dailyProtein ?? 0;
+    final fatGoal = goal?.dailyFat ?? 0;
+    final carbsGoal = goal?.dailyCarbs ?? 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -551,6 +555,22 @@ class _NutritionCalendar extends StatelessWidget {
                   goal: proteinGoal,
                   suffix: 'g',
                 ),
+                const SizedBox(height: 14),
+                _NutritionProgressRow(
+                  icon: Icons.water_drop_outlined,
+                  label: 'Tłuszcze',
+                  value: fat,
+                  goal: fatGoal,
+                  suffix: 'g',
+                ),
+                const SizedBox(height: 14),
+                _NutritionProgressRow(
+                  icon: Icons.grain_outlined,
+                  label: 'Węglowodany',
+                  value: carbs,
+                  goal: carbsGoal,
+                  suffix: 'g',
+                ),
               ],
             ),
           ),
@@ -581,6 +601,8 @@ class _NutritionCalendar extends StatelessWidget {
     await AppScope.of(context).saveNutritionGoal(
       dailyCalories: draft.dailyCalories,
       dailyProtein: draft.dailyProtein,
+      dailyFat: draft.dailyFat,
+      dailyCarbs: draft.dailyCarbs,
     );
   }
 
@@ -596,6 +618,8 @@ class _NutritionCalendar extends StatelessWidget {
       date: date,
       calories: draft.calories,
       protein: draft.protein,
+      fat: draft.fat,
+      carbs: draft.carbs,
       note: draft.note,
     );
   }
@@ -663,7 +687,8 @@ class _NutritionEntryTile extends StatelessWidget {
         leading: const Icon(Icons.restaurant_outlined),
         title: Text(entry.note.isEmpty ? 'Wpis kcal' : entry.note),
         subtitle: Text(
-          '${entry.calories} kcal - ${formatQuantity(entry.protein)} g białka',
+          '${entry.calories} kcal - ${formatQuantity(entry.protein)} g białka - '
+          '${formatQuantity(entry.fat)} g tł. - ${formatQuantity(entry.carbs)} g węgli',
         ),
         trailing: Wrap(
           spacing: 2,
@@ -694,6 +719,8 @@ class _NutritionGoalDialogState extends State<_NutritionGoalDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _caloriesController;
   late final TextEditingController _proteinController;
+  late final TextEditingController _fatController;
+  late final TextEditingController _carbsController;
 
   @override
   void initState() {
@@ -706,12 +733,22 @@ class _NutritionGoalDialogState extends State<_NutritionGoalDialog> {
           ? '120'
           : formatQuantity(widget.goal!.dailyProtein),
     );
+    _fatController = TextEditingController(
+      text: widget.goal == null ? '70' : formatQuantity(widget.goal!.dailyFat),
+    );
+    _carbsController = TextEditingController(
+      text: widget.goal == null
+          ? '250'
+          : formatQuantity(widget.goal!.dailyCarbs),
+    );
   }
 
   @override
   void dispose() {
     _caloriesController.dispose();
     _proteinController.dispose();
+    _fatController.dispose();
+    _carbsController.dispose();
     super.dispose();
   }
 
@@ -744,6 +781,22 @@ class _NutritionGoalDialogState extends State<_NutritionGoalDialog> {
                 validator: (value) =>
                     _parseDouble(value ?? '') <= 0 ? 'Wpisz białko' : null,
               ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _fatController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(labelText: 'Tłuszcze (g)'),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _carbsController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(labelText: 'Węglowodany (g)'),
+              ),
             ],
           ),
         ),
@@ -767,6 +820,8 @@ class _NutritionGoalDialogState extends State<_NutritionGoalDialog> {
       _NutritionGoalDraft(
         dailyCalories: _parseInt(_caloriesController.text),
         dailyProtein: _parseDouble(_proteinController.text),
+        dailyFat: _parseDouble(_fatController.text),
+        dailyCarbs: _parseDouble(_carbsController.text),
       ),
     );
   }
@@ -786,12 +841,16 @@ class _NutritionEntryDialogState extends State<_NutritionEntryDialog> {
   final _noteController = TextEditingController();
   final _caloriesController = TextEditingController();
   final _proteinController = TextEditingController();
+  final _fatController = TextEditingController();
+  final _carbsController = TextEditingController();
 
   @override
   void dispose() {
     _noteController.dispose();
     _caloriesController.dispose();
     _proteinController.dispose();
+    _fatController.dispose();
+    _carbsController.dispose();
     super.dispose();
   }
 
@@ -828,6 +887,24 @@ class _NutritionEntryDialogState extends State<_NutritionEntryDialog> {
                   ),
                   decoration: const InputDecoration(labelText: 'Białko (g)'),
                 ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _fatController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(labelText: 'Tłuszcze (g)'),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _carbsController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Węglowodany (g)',
+                  ),
+                ),
               ],
             ),
           ),
@@ -852,6 +929,8 @@ class _NutritionEntryDialogState extends State<_NutritionEntryDialog> {
       _NutritionEntryDraft(
         calories: _parseInt(_caloriesController.text),
         protein: _parseDouble(_proteinController.text),
+        fat: _parseDouble(_fatController.text),
+        carbs: _parseDouble(_carbsController.text),
         note: _noteController.text.trim(),
       ),
     );
@@ -862,21 +941,29 @@ class _NutritionGoalDraft {
   const _NutritionGoalDraft({
     required this.dailyCalories,
     required this.dailyProtein,
+    required this.dailyFat,
+    required this.dailyCarbs,
   });
 
   final int dailyCalories;
   final double dailyProtein;
+  final double dailyFat;
+  final double dailyCarbs;
 }
 
 class _NutritionEntryDraft {
   const _NutritionEntryDraft({
     required this.calories,
     required this.protein,
+    required this.fat,
+    required this.carbs,
     required this.note,
   });
 
   final int calories;
   final double protein;
+  final double fat;
+  final double carbs;
   final String note;
 }
 
