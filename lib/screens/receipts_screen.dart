@@ -9,6 +9,7 @@ import '../models/entities.dart';
 import '../services/receipt_ai_service.dart';
 import '../services/receipt_scanner.dart';
 import '../utils/receipt_parser.dart';
+import '../utils/scan_hints.dart';
 
 class ReceiptsScreen extends StatefulWidget {
   const ReceiptsScreen({super.key});
@@ -84,6 +85,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
             text: result.text,
             imageData: result.imageData,
             imageMimeType: result.imageMimeType,
+            hints: buildProductScanHints(appState.data),
           );
           if (_receiptParseScore(localParsed) >
               _receiptParseScore(serverParsed)) {
@@ -1001,7 +1003,10 @@ bool _receiptItemsLookCoherent(ParsedReceipt receipt) {
   if (receipt.items.isEmpty || receipt.total <= 0) {
     return true;
   }
-  final sum = receipt.items.fold<double>(0, (total, item) => total + item.price);
+  final sum = receipt.items.fold<double>(
+    0,
+    (total, item) => total + item.price,
+  );
   return sum <= receipt.total * 1.2;
 }
 

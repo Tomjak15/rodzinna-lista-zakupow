@@ -17,6 +17,7 @@ class RecipeAiService {
     String? text,
     String? imageData,
     String? imageMimeType,
+    List<String> hints = const [],
   }) async {
     final response = await _client
         .post(
@@ -26,6 +27,7 @@ class RecipeAiService {
             'text': text?.trim() ?? '',
             'imageData': imageData,
             'imageMimeType': imageMimeType,
+            'hints': hints,
           }),
         )
         .timeout(const Duration(seconds: 60));

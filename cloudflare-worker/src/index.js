@@ -561,6 +561,7 @@ async function scanReceiptFromRequest({
   const text = cleanText(body?.text);
   const imageData = cleanText(body?.imageData);
   const imageMimeType = cleanText(body?.imageMimeType) || "image/jpeg";
+  const hints = normalizeScanHints(body?.hints);
 
   if (!text && !imageData) {
     throw new ApiError("Dodaj zdjęcie albo tekst paragonu.", 400);
@@ -575,7 +576,9 @@ async function scanReceiptFromRequest({
           text,
           imageData,
           imageMimeType,
+          hints,
         }),
+        hints,
       );
     } catch (error) {
       if (!text) {
@@ -589,7 +592,7 @@ async function scanReceiptFromRequest({
   }
 
   const textFallback = text
-    ? normalizeReceiptScanDraft(parseReceiptTextFallback(text))
+    ? normalizeReceiptScanDraft(parseReceiptTextFallback(text), hints)
     : null;
   if (textFallback && isReceiptScanUseful(textFallback)) {
     return textFallback;
@@ -601,7 +604,9 @@ async function scanReceiptFromRequest({
         await scanReceiptTextWithWorkersAi({
           workersAi,
           text,
+          hints,
         }),
+        hints,
       );
       if (isReceiptScanUseful(aiTextResult)) {
         return aiTextResult;
@@ -627,7 +632,9 @@ async function scanReceiptFromRequest({
           text,
           imageData,
           imageMimeType,
+          hints,
         }),
+        hints,
       );
       return isReceiptScanCoherent(imageAiResult)
         ? imageAiResult
@@ -662,11 +669,16 @@ async function scanReceiptWithOpenAi({
   text,
   imageData,
   imageMimeType,
+  hints,
 }) {
+  const hintsText = scanHintsPrompt(hints, "Znane produkty w tej rodzinie");
   const content = [
     {
       type: "input_text",
       text: [
+        "Jesli OCR jest podobny do produktu ze slownika, uzyj nazwy ze slownika. Slownik jest podpowiedzia, nie lista zamknieta.",
+        receiptExamplesPrompt(),
+        hintsText,
         "Odczytaj polski paragon ze zdjęcia lub tekstu OCR.",
         "Zwróć sklep, kwotę razem i listę produktów. Pomijaj NIP, numer paragonu, VAT, płatność, kody i losowe numery.",
         "Dla produktów podaj nazwę, ilość, jednostkę i cenę końcową z paragonu. Jeśli czegoś nie ma, użyj rozsądnego minimum: ilość 1, jednostka szt., cena 0.",
@@ -720,7 +732,8 @@ async function scanReceiptWithOpenAi({
   return JSON.parse(outputText);
 }
 
-async function scanReceiptTextWithWorkersAi({ workersAi, text }) {
+async function scanReceiptTextWithWorkersAi({ workersAi, text, hints }) {
+  const hintsText = scanHintsPrompt(hints, "Znane produkty w tej rodzinie");
   const outputText = await runWorkersAiTextJson({
     workersAi,
     model: defaultWorkersAiTextModel,
@@ -731,9 +744,12 @@ async function scanReceiptTextWithWorkersAi({ workersAi, text }) {
       "Z tekstu OCR paragonu wyciagnij sklep, kwote razem i produkty.",
       "Pomin NIP, numer paragonu, VAT, platnosc, kody, losowe numery i reklamy.",
       "Jesli produkt ma tylko cene, ustaw ilosc 1 i jednostke szt.",
+      "Jesli nazwa wyglada jak produkt ze slownika, popraw ja do nazwy ze slownika.",
+      receiptExamplesPrompt(),
+      hintsText,
       'Zwroc tylko JSON w formacie: {"storeName":"Sklep","total":0,"items":[{"name":"Produkt","quantity":1,"unit":"szt.","price":0}]}',
       `Tekst OCR:\n${text}`,
-    ].join("\n"),
+    ].filter(Boolean).join("\n"),
   });
   return parseAiJsonObject(outputText);
 }
@@ -744,7 +760,9 @@ async function scanReceiptWithWorkersAi({
   text,
   imageData,
   imageMimeType,
+  hints,
 }) {
+  const hintsText = scanHintsPrompt(hints, "Znane produkty w tej rodzinie");
   return runWorkersAiVisionObject({
     workersAi,
     model,
@@ -758,6 +776,9 @@ async function scanReceiptWithWorkersAi({
       "Znajdz sklep, kwote razem oraz produkty.",
       "Dla produktow podaj nazwe, ilosc, jednostke i cene koncowa z paragonu.",
       "Jesli ilosci nie widac, ustaw 1 i jednostke szt.",
+      "Jesli nazwa wyglada jak produkt ze slownika, popraw ja do nazwy ze slownika.",
+      receiptExamplesPrompt(),
+      hintsText,
       'Zwroc tylko JSON w formacie: {"storeName":"Sklep","total":0,"items":[{"name":"Produkt","quantity":1,"unit":"szt.","price":0}]}',
       text ? `Tekst OCR/uzytkownika:\n${text}` : "",
     ]
@@ -883,7 +904,7 @@ function receiptItemFromLine(line, price, previousLine) {
   };
 }
 
-function normalizeReceiptScanDraft(value) {
+function normalizeReceiptScanDraft(value, hints = []) {
   const items = Array.isArray(value.items)
     ? value.items
         .map((item) => ({
@@ -895,11 +916,12 @@ function normalizeReceiptScanDraft(value) {
         .filter((item) => item.name && item.quantity > 0)
     : [];
   const sum = items.reduce((total, item) => total + item.price, 0);
-  return {
+  const result = {
     storeName: cleanText(value.storeName) || "Sklep",
     total: Math.max(0, Number(value.total || 0)) || sum,
     items,
   };
+  return applyHintsToReceiptScan(result, hints);
 }
 
 async function scanRecipeFromRequest({
@@ -912,6 +934,7 @@ async function scanRecipeFromRequest({
   const text = cleanText(body?.text);
   const imageData = cleanText(body?.imageData);
   const imageMimeType = cleanText(body?.imageMimeType) || "image/jpeg";
+  const hints = normalizeScanHints(body?.hints);
 
   if (!text && !imageData) {
     throw new ApiError("Dodaj zdjęcie albo tekst przepisu.", 400);
@@ -926,7 +949,9 @@ async function scanRecipeFromRequest({
           text,
           imageData,
           imageMimeType,
+          hints,
         }),
+        hints,
       );
     } catch (error) {
       if (!text) {
@@ -936,7 +961,7 @@ async function scanRecipeFromRequest({
     }
   }
 
-  const textFallback = text ? tryParseRecipeTextFallback(text) : null;
+  const textFallback = text ? tryParseRecipeTextFallback(text, hints) : null;
   if (textFallback) {
     return textFallback;
   }
@@ -947,7 +972,9 @@ async function scanRecipeFromRequest({
         await scanRecipeTextWithWorkersAi({
           workersAi,
           text,
+          hints,
         }),
+        hints,
       );
     } catch (error) {
       console.warn(
@@ -966,7 +993,9 @@ async function scanRecipeFromRequest({
           text,
           imageData,
           imageMimeType,
+          hints,
         }),
+        hints,
       );
     } catch (error) {
       if (!text) {
@@ -989,14 +1018,25 @@ async function scanRecipeFromRequest({
     );
   }
 
-  return normalizeRecipeScanDraft(parseRecipeTextFallback(text));
+  return normalizeRecipeScanDraft(parseRecipeTextFallback(text), hints);
 }
 
-async function scanRecipeWithOpenAi({ apiKey, model, text, imageData, imageMimeType }) {
+async function scanRecipeWithOpenAi({
+  apiKey,
+  model,
+  text,
+  imageData,
+  imageMimeType,
+  hints,
+}) {
+  const hintsText = scanHintsPrompt(hints, "Znane skladniki i produkty w tej rodzinie");
   const content = [
     {
       type: "input_text",
       text: [
+        "Jesli OCR jest podobny do skladnika ze slownika, uzyj nazwy ze slownika. Slownik jest podpowiedzia, nie lista zamknieta.",
+        recipeExamplesPrompt(),
+        hintsText,
         "Odczytaj polski przepis kulinarny ze zdjęcia lub tekstu.",
         "Zwróć tylko dane przepisu. Nie zgaduj agresywnie: jeśli kcal, białka, tłuszczu albo węglowodanów nie ma, ustaw 0.",
         "Kategorie dozwolone: Śniadania, Obiady, Kolacje, Przekąski, Desery, Napoje, Anna, Kaja, Maciej, Tomek.",
@@ -1051,7 +1091,8 @@ async function scanRecipeWithOpenAi({ apiKey, model, text, imageData, imageMimeT
   return JSON.parse(outputText);
 }
 
-async function scanRecipeTextWithWorkersAi({ workersAi, text }) {
+async function scanRecipeTextWithWorkersAi({ workersAi, text, hints }) {
+  const hintsText = scanHintsPrompt(hints, "Znane skladniki i produkty w tej rodzinie");
   const outputText = await runWorkersAiTextJson({
     workersAi,
     model: defaultWorkersAiTextModel,
@@ -1063,9 +1104,12 @@ async function scanRecipeTextWithWorkersAi({ workersAi, text }) {
       `Kategorie dozwolone: ${allowedRecipeCategories().join(", ")}.`,
       "Jesli kcal, bialka, tluszczu albo weglowodanow nie ma, ustaw 0.",
       "Skladniki zapisz jako nazwa, ilosc i jednostka. Nie dodawaj skladnikow, ktorych nie ma w tekscie.",
+      "Jesli nazwa wyglada jak skladnik ze slownika, popraw ja do nazwy ze slownika.",
+      recipeExamplesPrompt(),
+      hintsText,
       'Zwroc tylko JSON w formacie: {"name":"Nazwa","category":"Obiady","instructions":"Opis","baseServings":4,"caloriesPerServing":0,"proteinPerServing":0,"fatPerServing":0,"carbsPerServing":0,"ingredients":[{"name":"Produkt","quantity":1,"unit":"szt."}]}',
       `Tekst OCR:\n${text}`,
-    ].join("\n"),
+    ].filter(Boolean).join("\n"),
   });
   return parseAiJsonObject(outputText);
 }
@@ -1076,7 +1120,9 @@ async function scanRecipeWithWorkersAi({
   text,
   imageData,
   imageMimeType,
+  hints,
 }) {
+  const hintsText = scanHintsPrompt(hints, "Znane skladniki i produkty w tej rodzinie");
   return runWorkersAiVisionObject({
     workersAi,
     model,
@@ -1090,6 +1136,9 @@ async function scanRecipeWithWorkersAi({
       `Kategorie dozwolone: ${allowedRecipeCategories().join(", ")}.`,
       "Jesli kcal, bialka, tluszczu albo weglowodanow nie ma, ustaw 0.",
       "Skladniki zapisz jako nazwa, ilosc i jednostka. Nie dodawaj skladnikow, ktorych nie widac.",
+      "Jesli nazwa wyglada jak skladnik ze slownika, popraw ja do nazwy ze slownika.",
+      recipeExamplesPrompt(),
+      hintsText,
       'Zwroc tylko JSON w formacie: {"name":"Nazwa","category":"Obiady","instructions":"Opis","baseServings":4,"caloriesPerServing":0,"proteinPerServing":0,"fatPerServing":0,"carbsPerServing":0,"ingredients":[{"name":"Produkt","quantity":1,"unit":"szt."}]}',
       text ? `Tekst OCR/uzytkownika:\n${text}` : "",
     ]
@@ -1155,6 +1204,161 @@ function extractOpenAiOutputText(payload) {
     }
   }
   return "";
+}
+
+function normalizeScanHints(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seen = new Set();
+  const result = [];
+  for (const item of value) {
+    const cleaned = cleanText(item).replace(/\s+/g, " ").trim();
+    if (cleaned.length < 2 || cleaned.length > 48) {
+      continue;
+    }
+    const key = normalizeHintSearch(cleaned);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(cleaned);
+    if (result.length >= 320) {
+      break;
+    }
+  }
+  return result;
+}
+
+function scanHintsPrompt(hints, title) {
+  if (!Array.isArray(hints) || hints.length === 0) {
+    return "";
+  }
+  return `${title}. Gdy OCR jest podobny do nazwy ze slownika, uzyj dokladnie tej nazwy:\n- ${hints
+    .slice(0, 240)
+    .join("\n- ")}`;
+}
+
+function receiptExamplesPrompt() {
+  return [
+    "Przyklady paragonu:",
+    "OCR: CHLEB PSZENNY 1 szt 4,99 => name=Chleb pszenny, quantity=1, unit=szt., price=4.99",
+    "OCR: MASLO EXTRA 200 g 7,99 => name=Maslo, quantity=200, unit=g, price=7.99",
+    "OCR: MLEKO 1 l 3,49 => name=Mleko, quantity=1, unit=l, price=3.49",
+    "OCR: SUMA PLN 16,47 => total=16.47, nie produkt",
+  ].join("\n");
+}
+
+function recipeExamplesPrompt() {
+  return [
+    "Przyklady przepisu:",
+    "OCR: 300 g marchewki => name=Marchew, quantity=300, unit=g",
+    "OCR: makaron 200g => name=Makaron, quantity=200, unit=g",
+    "OCR: 2 lyzki jogurtu => name=Jogurt, quantity=2, unit=lyzka",
+  ].join("\n");
+}
+
+function applyHintsToReceiptScan(value, hints) {
+  if (!Array.isArray(hints) || hints.length === 0) {
+    return value;
+  }
+  return {
+    ...value,
+    items: value.items.map((item) => ({
+      ...item,
+      name: bestHintName(item.name, hints),
+    })),
+  };
+}
+
+function mergeScanIngredients(items) {
+  const byKey = new Map();
+  for (const item of items) {
+    const key = `${normalizeHintSearch(item.name)}|${normalizeUnit(item.unit)}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.quantity += item.quantity;
+    } else {
+      byKey.set(key, { ...item });
+    }
+  }
+  return [...byKey.values()];
+}
+
+function bestHintName(value, hints) {
+  const original = cleanText(value);
+  if (!original || !Array.isArray(hints) || hints.length === 0) {
+    return original;
+  }
+
+  const normalized = normalizeHintSearch(normalizeReceiptCandidateName(original));
+  if (!normalized) {
+    return original;
+  }
+
+  const compact = normalized.replace(/\s+/g, "");
+  let bestName = "";
+  let bestScore = 0;
+
+  for (const hint of hints) {
+    const hintName = cleanText(hint);
+    const hintKey = normalizeHintSearch(hintName);
+    if (!hintName || !hintKey) {
+      continue;
+    }
+    const hintCompact = hintKey.replace(/\s+/g, "");
+    let score = 0;
+
+    if (normalized === hintKey) {
+      score = 10000 + hintKey.length;
+    } else if (containsHintTerm(normalized, hintKey)) {
+      score = 9000 + hintKey.length;
+    } else if (hintKey.includes(normalized) && normalized.length >= 4) {
+      score = 7000 + normalized.length;
+    } else if (hintCompact.length >= 4 && compact.includes(hintCompact)) {
+      score = 6000 + hintCompact.length;
+    } else if (compact.length >= 4 && hintCompact.includes(compact)) {
+      score = 5000 + compact.length;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestName = hintName;
+    }
+  }
+
+  return bestName || titleCaseProduct(original);
+}
+
+function containsHintTerm(text, term) {
+  return ` ${text} `.includes(` ${term} `);
+}
+
+function normalizeReceiptCandidateName(value) {
+  return cleanText(value)
+    .replace(receiptUnitPricePattern, " ")
+    .replace(receiptPricePattern, " ")
+    .replace(receiptQuantityPattern, " ")
+    .replace(/\b\d+(?:[,.]\d+)?\s*x\b/gi, " ")
+    .replace(/\bx\b/gi, " ")
+    .replace(/\b(pln|zl|zloty|kcal)\b/gi, " ")
+    .replace(/\b\d{5,}\b/g, " ")
+    .replace(/[*#:;]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeHintSearch(value) {
+  return cleanText(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replaceAll("ł", "l")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\b\d+(?:[,.]\d+)?\s*(kg|g|l|ml|szt|sztuka|sztuki|op|opak)\b/g, " ")
+    .replace(/\b\d{5,}\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 async function runWorkersAiTextJson({
@@ -1315,9 +1519,9 @@ function parseAiJsonObject(text) {
   }
 }
 
-function tryParseRecipeTextFallback(text) {
+function tryParseRecipeTextFallback(text, hints = []) {
   try {
-    return normalizeRecipeScanDraft(parseRecipeTextFallback(text));
+    return normalizeRecipeScanDraft(parseRecipeTextFallback(text), hints);
   } catch (_) {
     return null;
   }
@@ -1399,10 +1603,10 @@ function parseIngredientLine(line) {
     .replace(/\s+/g, " ")
     .trim();
   const match = cleaned.match(
-    /^(.+?)\s+(\d+(?:[,.]\d+)?|\d+\/\d+)\s*(g|kg|ml|l|szt\.?|łyżka|łyżki|łyżeczka|łyżeczki|szklanka|opak\.?|puszka|ząbek|garść)?$/i,
+    /^(.+?)\s+(\d+(?:[,.]\d+)?|\d+\/\d+)\s*(g|kg|ml|l|szt\.?|lyzka|lyzki|lyzeczka|lyzeczki|szklanka|szklanki|opak\.?|op|puszka|puszki|zabek|zabki|garsc|łyżka|łyżki|łyżeczka|łyżeczki|ząbek|garść)?$/i,
   );
   const reverseMatch = cleaned.match(
-    /^(\d+(?:[,.]\d+)?|\d+\/\d+)\s*(g|kg|ml|l|szt\.?|łyżka|łyżki|łyżeczka|łyżeczki|szklanka|opak\.?|puszka|ząbek|garść)?\s+(.+)$/i,
+    /^(\d+(?:[,.]\d+)?|\d+\/\d+)\s*(g|kg|ml|l|szt\.?|lyzka|lyzki|lyzeczka|lyzeczki|szklanka|szklanki|opak\.?|op|puszka|puszki|zabek|zabki|garsc|łyżka|łyżki|łyżeczka|łyżeczki|ząbek|garść)?\s+(.+)$/i,
   );
 
   const source = match
@@ -1425,16 +1629,16 @@ function parseIngredientLine(line) {
   };
 }
 
-function normalizeRecipeScanDraft(value) {
-  const ingredients = Array.isArray(value.ingredients)
+function normalizeRecipeScanDraft(value, hints = []) {
+  const ingredients = mergeScanIngredients(Array.isArray(value.ingredients)
     ? value.ingredients
         .map((item) => ({
-          name: cleanText(item?.name),
+          name: bestHintName(cleanText(item?.name), hints),
           quantity: Number(item?.quantity || 0),
           unit: normalizeUnit(cleanText(item?.unit) || "szt."),
         }))
         .filter((item) => item.name && item.quantity > 0)
-    : [];
+    : []);
 
   if (ingredients.length === 0) {
     throw new ApiError("Nie rozpoznano składników przepisu.", 422);
@@ -1530,10 +1734,13 @@ function normalizeUnit(value) {
     lyzeczka: "łyżeczka",
     lyzeczki: "łyżeczka",
     "łyżeczki": "łyżeczka",
+    szklanki: "szklanka",
     opak: "opak.",
     op: "opak.",
+    puszki: "puszka",
     zabek: "ząbek",
     zabki: "ząbek",
+    garsc: "garść",
   };
   return aliases[unit] || unit || "szt.";
 }

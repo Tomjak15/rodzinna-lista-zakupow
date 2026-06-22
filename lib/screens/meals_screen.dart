@@ -10,6 +10,7 @@ import '../models/recipe_scan_result.dart';
 import '../services/recipe_ai_service.dart';
 import '../services/recipe_scanner.dart';
 import '../utils/ingredient_parser.dart';
+import '../utils/scan_hints.dart';
 
 class MealsScreen extends StatefulWidget {
   const MealsScreen({super.key});
@@ -111,6 +112,7 @@ class _MealsScreenState extends State<MealsScreen> {
             text: imageScan?.text ?? pastedText,
             imageData: imageScan?.imageData,
             imageMimeType: imageScan?.imageMimeType,
+            hints: buildIngredientScanHints(appState.data),
           );
         } on RecipeAiException {
           final recognizedText = imageScan?.text.trim() ?? '';
@@ -128,7 +130,10 @@ class _MealsScreenState extends State<MealsScreen> {
           if (correctedText == null || correctedText.trim().isEmpty) {
             return;
           }
-          scanDraft = await service.scanRecipe(text: correctedText);
+          scanDraft = await service.scanRecipe(
+            text: correctedText,
+            hints: buildIngredientScanHints(appState.data),
+          );
         }
         if (!context.mounted) {
           return;

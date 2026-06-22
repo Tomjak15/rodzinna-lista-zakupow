@@ -18,6 +18,7 @@ class ReceiptAiService {
     String? text,
     String? imageData,
     String? imageMimeType,
+    List<String> hints = const [],
   }) async {
     final response = await _client
         .post(
@@ -27,6 +28,7 @@ class ReceiptAiService {
             'text': text?.trim() ?? '',
             'imageData': imageData,
             'imageMimeType': imageMimeType,
+            'hints': hints,
           }),
         )
         .timeout(const Duration(seconds: 60));
