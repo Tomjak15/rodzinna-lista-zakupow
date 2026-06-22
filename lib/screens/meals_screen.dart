@@ -105,11 +105,31 @@ class _MealsScreenState extends State<MealsScreen> {
 
       final service = RecipeAiService(appState.serverUrl);
       try {
-        final scanDraft = await service.scanRecipe(
-          text: imageScan?.text ?? pastedText,
-          imageData: imageScan?.imageData,
-          imageMimeType: imageScan?.imageMimeType,
-        );
+        late final RecipeScanDraft scanDraft;
+        try {
+          scanDraft = await service.scanRecipe(
+            text: imageScan?.text ?? pastedText,
+            imageData: imageScan?.imageData,
+            imageMimeType: imageScan?.imageMimeType,
+          );
+        } on RecipeAiException {
+          final recognizedText = imageScan?.text.trim() ?? '';
+          if (!context.mounted) {
+            rethrow;
+          }
+          final correctedText = await _openRecipeTextScanDialog(
+            context,
+            title: 'Popraw tekst przepisu',
+            initialText: recognizedText,
+            helperText: recognizedText.isEmpty
+                ? 'Nie udało się odczytać tekstu ze zdjęcia. Wpisz albo wklej przepis ręcznie.'
+                : 'Nie udało się automatycznie rozpoznać składników. Popraw tekst i spróbuj jeszcze raz.',
+          );
+          if (correctedText == null || correctedText.trim().isEmpty) {
+            return;
+          }
+          scanDraft = await service.scanRecipe(text: correctedText);
+        }
         if (!context.mounted) {
           return;
         }
@@ -146,12 +166,17 @@ class _MealsScreenState extends State<MealsScreen> {
   }
 }
 
-Future<String?> _openRecipeTextScanDialog(BuildContext context) async {
-  final controller = TextEditingController();
+Future<String?> _openRecipeTextScanDialog(
+  BuildContext context, {
+  String title = 'Wklej przepis',
+  String initialText = '',
+  String? helperText,
+}) async {
+  final controller = TextEditingController(text: initialText);
   final value = await showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Wklej przepis'),
+      title: Text(title),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
         child: TextField(
@@ -162,7 +187,7 @@ Future<String?> _openRecipeTextScanDialog(BuildContext context) async {
           decoration: const InputDecoration(
             labelText: 'Tekst przepisu',
             hintText: 'Nazwa, składniki, porcje i przygotowanie',
-          ),
+          ).copyWith(helperText: helperText, helperMaxLines: 3),
         ),
       ),
       actions: [

@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../app/app_scope.dart';
 import '../models/entities.dart';
+import '../services/receipt_ai_service.dart';
 import '../services/receipt_scanner.dart';
 import '../utils/receipt_parser.dart';
 
@@ -67,11 +68,45 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
     }
     setState(() => _scanning = true);
     try {
+      final appState = AppScope.of(context);
       final result = await scanReceiptFromCamera();
       if (!mounted || result == null) {
         return;
       }
-      final parsed = parseReceiptText(result.text);
+      final localParsed = parseReceiptText(result.text);
+      var parsed = localParsed;
+      String? scanNotice;
+
+      if (appState.backendConfigured) {
+        final service = ReceiptAiService(appState.serverUrl);
+        try {
+          parsed = await service.scanReceipt(
+            text: result.text,
+            imageData: result.imageData,
+            imageMimeType: result.imageMimeType,
+          );
+        } on ReceiptAiException catch (error) {
+          scanNotice =
+              'Serwer nie odczytał paragonu automatycznie. Używam lokalnego OCR: ${error.message}';
+        } finally {
+          service.dispose();
+        }
+      }
+
+      if (parsed.items.isEmpty && parsed.total <= 0) {
+        scanNotice ??=
+            'Nie rozpoznano produktów ani kwoty. Zdjęcie zostanie zapisane, popraw dane ręcznie.';
+      } else if (parsed.items.isEmpty) {
+        scanNotice ??=
+            'Nie rozpoznano produktów. Kwotę i sklep możesz zostawić, produkty dopisz ręcznie.';
+      } else if (parsed.total <= 0) {
+        scanNotice ??=
+            'Nie rozpoznano kwoty. Produkty są wczytane, wpisz kwotę.';
+      }
+
+      if (!mounted) {
+        return;
+      }
       await _openReceiptEditor(
         context,
         initialStoreName: parsed.storeName,
@@ -79,6 +114,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
         initialTotal: parsed.total,
         imageData: result.imageData,
         imageMimeType: result.imageMimeType,
+        scanNotice: scanNotice,
       );
     } on ReceiptScanException catch (error) {
       if (!mounted) {
@@ -101,6 +137,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
     double initialTotal = 0,
     String? imageData,
     String? imageMimeType,
+    String? scanNotice,
   }) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -112,6 +149,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
         initialTotal: initialTotal,
         imageData: imageData,
         imageMimeType: imageMimeType,
+        scanNotice: scanNotice,
       ),
     );
   }
@@ -436,6 +474,7 @@ class _ReceiptEditorSheet extends StatefulWidget {
     required this.initialTotal,
     required this.imageData,
     required this.imageMimeType,
+    required this.scanNotice,
   });
 
   final String? initialStoreName;
@@ -443,6 +482,7 @@ class _ReceiptEditorSheet extends StatefulWidget {
   final double initialTotal;
   final String? imageData;
   final String? imageMimeType;
+  final String? scanNotice;
 
   @override
   State<_ReceiptEditorSheet> createState() => _ReceiptEditorSheetState();
@@ -524,6 +564,10 @@ class _ReceiptEditorSheetState extends State<_ReceiptEditorSheet> {
                         : '${_totalController.text.trim()} zł',
                   ),
                 ),
+              ],
+              if (widget.scanNotice != null) ...[
+                const SizedBox(height: 12),
+                _ScanNotice(message: widget.scanNotice!),
               ],
               const SizedBox(height: 12),
               TextFormField(
@@ -670,6 +714,38 @@ class _ReceiptPhotoPreview extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ScanNotice extends StatelessWidget {
+  const _ScanNotice({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, color: scheme.onErrorContainer),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(color: scheme.onErrorContainer),
+            ),
+          ),
+        ],
       ),
     );
   }

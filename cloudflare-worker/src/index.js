@@ -285,6 +285,10 @@ async function handleRequest(request, env) {
     return scanRecipe(request, env);
   }
 
+  if (request.method === "POST" && path === "/api/ai/receipt-scan") {
+    return scanReceipt(request, env);
+  }
+
   const collectionMatch = path.match(/^\/api\/([^/]+)$/);
   if (request.method === "GET" && collectionMatch) {
     return listRows(env, collectionMatch[1], url.searchParams);
@@ -364,6 +368,16 @@ async function scanRecipe(request, env) {
     body,
     apiKey: env.OPENAI_API_KEY,
     model: env.OPENAI_RECIPE_MODEL || "gpt-4.1-mini",
+  });
+  return json(result);
+}
+
+async function scanReceipt(request, env) {
+  const body = await request.json();
+  const result = await scanReceiptFromRequest({
+    body,
+    apiKey: env.OPENAI_API_KEY,
+    model: env.OPENAI_RECEIPT_MODEL || "gpt-4.1-mini",
   });
   return json(result);
 }
@@ -526,6 +540,235 @@ function boolToInt(value) {
     return value === "true" || value === "1" ? 1 : 0;
   }
   return 0;
+}
+
+async function scanReceiptFromRequest({ body, apiKey, model }) {
+  const text = cleanText(body?.text);
+  const imageData = cleanText(body?.imageData);
+  const imageMimeType = cleanText(body?.imageMimeType) || "image/jpeg";
+
+  if (!text && !imageData) {
+    throw new ApiError("Dodaj zdjęcie albo tekst paragonu.", 400);
+  }
+
+  if (apiKey) {
+    try {
+      return normalizeReceiptScanDraft(
+        await scanReceiptWithOpenAi({
+          apiKey,
+          model,
+          text,
+          imageData,
+          imageMimeType,
+        }),
+      );
+    } catch (error) {
+      if (!text) {
+        throw error;
+      }
+      console.warn(
+        "AI receipt scan failed, using text fallback:",
+        error.message,
+      );
+    }
+  }
+
+  if (!text) {
+    throw new ApiError(
+      "AI nie jest jeszcze skonfigurowane. Ustaw OPENAI_API_KEY w Cloudflare.",
+      503,
+    );
+  }
+
+  return normalizeReceiptScanDraft(parseReceiptTextFallback(text));
+}
+
+async function scanReceiptWithOpenAi({
+  apiKey,
+  model,
+  text,
+  imageData,
+  imageMimeType,
+}) {
+  const content = [
+    {
+      type: "input_text",
+      text: [
+        "Odczytaj polski paragon ze zdjęcia lub tekstu OCR.",
+        "Zwróć sklep, kwotę razem i listę produktów. Pomijaj NIP, numer paragonu, VAT, płatność, kody i losowe numery.",
+        "Dla produktów podaj nazwę, ilość, jednostkę i cenę końcową z paragonu. Jeśli czegoś nie ma, użyj rozsądnego minimum: ilość 1, jednostka szt., cena 0.",
+        text ? `Tekst OCR/użytkownika:\n${text}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    },
+  ];
+
+  if (imageData) {
+    content.push({
+      type: "input_image",
+      image_url: `data:${imageMimeType};base64,${imageData}`,
+    });
+  }
+
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      input: [{ role: "user", content }],
+      max_output_tokens: 1800,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "receipt_scan",
+          strict: true,
+          schema: receiptScanJsonSchema(),
+        },
+      },
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new ApiError(
+      payload?.error?.message || `OpenAI error ${response.status}`,
+      response.status,
+    );
+  }
+
+  const outputText = extractOpenAiOutputText(payload);
+  if (!outputText) {
+    throw new ApiError("AI nie zwróciło paragonu.", 502);
+  }
+  return JSON.parse(outputText);
+}
+
+function receiptScanJsonSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["storeName", "total", "items"],
+    properties: {
+      storeName: { type: "string" },
+      total: { type: "number", minimum: 0 },
+      items: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["name", "quantity", "unit", "price"],
+          properties: {
+            name: { type: "string" },
+            quantity: { type: "number", minimum: 0 },
+            unit: { type: "string" },
+            price: { type: "number", minimum: 0 },
+          },
+        },
+      },
+    },
+  };
+}
+
+function parseReceiptTextFallback(text) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const items = [];
+  let total = 0;
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const lower = normalizeForReceiptSearch(line);
+    const price = lastReceiptPrice(line);
+    if (isReceiptTotalLine(lower)) {
+      total = price?.value || nearbyReceiptPrice(lines, index)?.value || total;
+      continue;
+    }
+    if (!price || shouldSkipReceiptLine(lower)) {
+      continue;
+    }
+    const item = receiptItemFromLine(line, price, lines[index - 1]);
+    if (
+      item &&
+      !items.some(
+        (existing) =>
+          normalizeForReceiptSearch(existing.name) ===
+            normalizeForReceiptSearch(item.name) && existing.price === item.price,
+      )
+    ) {
+      items.push(item);
+    }
+  }
+
+  return {
+    storeName: detectReceiptStoreName(lines) || "Sklep",
+    total: total || items.reduce((sum, item) => sum + item.price, 0),
+    items,
+  };
+}
+
+function receiptItemFromLine(line, price, previousLine) {
+  let beforePrice = line.slice(0, price.start).trim();
+  if (
+    previousLine &&
+    !lastReceiptPrice(previousLine) &&
+    isReceiptProductName(previousLine) &&
+    (lineHasOnlyReceiptPrice(line) || lineLooksLikeReceiptPriceContinuation(line))
+  ) {
+    beforePrice = `${previousLine} ${beforePrice}`;
+  }
+
+  const parsedQuantity = receiptQuantityFromLine(beforePrice);
+  const name = beforePrice
+    .replace(receiptUnitPricePattern, " ")
+    .replace(receiptPricePattern, " ")
+    .replace(receiptQuantityPattern, " ")
+    .replace(/\b\d+(?:[,.]\d+)?\s*x\b/gi, " ")
+    .replace(/\bx\s*\d+(?:[,. ]\d{2})\b/gi, " ")
+    .replace(/\bx\b/gi, " ")
+    .replace(/\bVAT\s*[A-Z]\b/gi, " ")
+    .replace(/\b[A-Z]\b$/g, " ")
+    .replace(/\b(kg|g|l|ml|szt|szt\.|op|opak)\b$/gi, " ")
+    .replace(/[*#:;]/g, " ")
+    .replace(/\b\d{5,}\b/g, " ")
+    .replace(/^[0-9]{2,}\s+/, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!isReceiptProductName(name)) {
+    return null;
+  }
+
+  return {
+    name: titleCaseProduct(name),
+    quantity: parsedQuantity.quantity,
+    unit: normalizeUnit(parsedQuantity.unit),
+    price: price.value,
+  };
+}
+
+function normalizeReceiptScanDraft(value) {
+  const items = Array.isArray(value.items)
+    ? value.items
+        .map((item) => ({
+          name: cleanText(item?.name),
+          quantity: Math.max(0, Number(item?.quantity || 1)),
+          unit: normalizeUnit(cleanText(item?.unit) || "szt."),
+          price: Math.max(0, Number(item?.price || 0)),
+        }))
+        .filter((item) => item.name && item.quantity > 0)
+    : [];
+  const sum = items.reduce((total, item) => total + item.price, 0);
+  return {
+    storeName: cleanText(value.storeName) || "Sklep",
+    total: Math.max(0, Number(value.total || 0)) || sum,
+    items,
+  };
 }
 
 async function scanRecipeFromRequest({ body, apiKey, model }) {
@@ -898,6 +1141,215 @@ function normalizeUnit(value) {
   };
   return aliases[unit] || unit || "szt.";
 }
+
+function detectReceiptStoreName(lines) {
+  const knownStores = {
+    biedronka: "Biedronka",
+    lidl: "Lidl",
+    kaufland: "Kaufland",
+    aldi: "Aldi",
+    carrefour: "Carrefour",
+    auchan: "Auchan",
+    dino: "Dino",
+    zabka: "Żabka",
+    netto: "Netto",
+    stokrotka: "Stokrotka",
+    rossmann: "Rossmann",
+    hebe: "Hebe",
+    pepco: "Pepco",
+    action: "Action",
+  };
+  for (const line of lines.slice(0, 14)) {
+    const normalized = normalizeForReceiptSearch(line);
+    for (const [key, value] of Object.entries(knownStores)) {
+      if (normalized.includes(key)) {
+        return value;
+      }
+    }
+  }
+  for (const line of lines.slice(0, 8)) {
+    const candidate = line
+      .replace(/[^A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż0-9 &.-]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const lower = normalizeForReceiptSearch(candidate);
+    if (
+      candidate.length >= 3 &&
+      candidate.length <= 36 &&
+      receiptLetterPattern.test(candidate) &&
+      !shouldSkipReceiptLine(lower) &&
+      !isReceiptTotalLine(lower) &&
+      !/\d{4,}/.test(candidate)
+    ) {
+      return titleCase(candidate);
+    }
+  }
+  return "";
+}
+
+function isReceiptProductName(value) {
+  const name = cleanText(value);
+  if (name.length < 2 || !receiptLetterPattern.test(name)) {
+    return false;
+  }
+  if (/^\d+$/.test(name) || /\b\d{8,}\b/.test(name)) {
+    return false;
+  }
+  const lower = normalizeForReceiptSearch(name);
+  return !shouldSkipReceiptLine(lower) && !isReceiptTotalLine(lower);
+}
+
+function isReceiptTotalLine(line) {
+  return (
+    line.includes("suma") ||
+    line.includes("razem") ||
+    line.includes("lacznie") ||
+    line.includes("do zaplaty") ||
+    line.includes("naleznosc") ||
+    line.includes("kwota") ||
+    line.includes("total")
+  );
+}
+
+function shouldSkipReceiptLine(line) {
+  return [
+    "paragon",
+    "fiskalny",
+    "nip",
+    "sprzedaz",
+    "podatek",
+    "vat",
+    "kasa",
+    "kasjer",
+    "terminal",
+    "platnosc",
+    "karta",
+    "gotowka",
+    "reszta",
+    "data",
+    "godz",
+    "adres",
+    "nr wydruku",
+    "nr paragonu",
+    "numer",
+    "www",
+    "bon",
+    "rabat",
+    "wydruk",
+    "transakcja",
+    "autoryzacja",
+    "dziekujemy",
+  ].some((word) => line.includes(word));
+}
+
+function nearbyReceiptPrice(lines, index) {
+  for (const offset of [0, 1, -1, 2]) {
+    const nextIndex = index + offset;
+    if (nextIndex < 0 || nextIndex >= lines.length) {
+      continue;
+    }
+    const price = lastReceiptPrice(lines[nextIndex]);
+    if (price) {
+      return price;
+    }
+  }
+  return null;
+}
+
+function lastReceiptPrice(line) {
+  const matches = [...line.matchAll(receiptPricePattern)];
+  if (matches.length === 0) {
+    return null;
+  }
+  const match = matches[matches.length - 1];
+  return {
+    start: match.index || 0,
+    value: Number(`${match[1]}.${match[3]}`) || 0,
+  };
+}
+
+function lineHasOnlyReceiptPrice(line) {
+  return stripReceiptPriceNoise(line).length === 0;
+}
+
+function lineLooksLikeReceiptPriceContinuation(line) {
+  const stripped = stripReceiptPriceNoise(line)
+    .replace(receiptQuantityPattern, " ")
+    .replace(/\b\d+(?:[,.]\d+)?\s*x\b/gi, " ")
+    .replace(/\bx\b/gi, " ")
+    .replace(/\b(kg|g|l|ml|szt|op|opak)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return stripped.length === 0;
+}
+
+function stripReceiptPriceNoise(line) {
+  return line
+    .replace(receiptPricePattern, " ")
+    .replace(/\b(zł|zl|pln)\b/gi, " ")
+    .replace(/\b[A-Z]\b/g, " ")
+    .replace(/[\s:;.-]+/g, " ")
+    .trim();
+}
+
+function receiptQuantityFromLine(line) {
+  const quantityMatch = line.match(receiptQuantityPattern);
+  if (quantityMatch) {
+    return {
+      quantity: Number(quantityMatch[1].replace(",", ".")) || 1,
+      unit: quantityMatch[2] || "szt.",
+    };
+  }
+  const multiplierMatch = line.match(/\b(\d+(?:[,.]\d+)?)\s*x\b/i);
+  if (multiplierMatch) {
+    return {
+      quantity: Number(multiplierMatch[1].replace(",", ".")) || 1,
+      unit: "szt.",
+    };
+  }
+  return { quantity: 1, unit: "szt." };
+}
+
+function normalizeForReceiptSearch(value) {
+  return cleanText(value)
+    .toLowerCase()
+    .replaceAll("ą", "a")
+    .replaceAll("ć", "c")
+    .replaceAll("ę", "e")
+    .replaceAll("ł", "l")
+    .replaceAll("ń", "n")
+    .replaceAll("ó", "o")
+    .replaceAll("ś", "s")
+    .replaceAll("ź", "z")
+    .replaceAll("ż", "z")
+    .replace(/[^a-z0-9,. ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function titleCase(value) {
+  return cleanText(value)
+    .split(" ")
+    .filter(Boolean)
+    .map((part) =>
+      part.length <= 2 && part === part.toUpperCase()
+        ? part
+        : part[0].toUpperCase() + part.slice(1).toLowerCase(),
+    )
+    .join(" ");
+}
+
+function titleCaseProduct(value) {
+  return value === value.toUpperCase() ? titleCase(value) : value;
+}
+
+const receiptLetterPattern = /[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]/;
+const receiptPricePattern =
+  /(?<!\d)(\d{1,5})\s*([,.\-:]|\s+)\s*(\d{2})(?!\d)(?:\s*(?:zł|zl|pln|[A-Z]))?/gi;
+const receiptUnitPricePattern =
+  /\b\d{1,5}(?:[,.]\d{2})\s*\/\s*(kg|g|l|ml|szt)\b/gi;
+const receiptQuantityPattern =
+  /(\d+(?:[,.]\d+)?)\s*(kg|g|l|ml|szt|szt\.|op|opak)\.?/i;
 
 function cleanText(value) {
   return (value ?? "").toString().trim();
