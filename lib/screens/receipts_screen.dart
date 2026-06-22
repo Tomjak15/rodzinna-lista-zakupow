@@ -80,11 +80,19 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
       if (appState.backendConfigured) {
         final service = ReceiptAiService(appState.serverUrl);
         try {
-          parsed = await service.scanReceipt(
+          final serverParsed = await service.scanReceipt(
             text: result.text,
             imageData: result.imageData,
             imageMimeType: result.imageMimeType,
           );
+          if (_receiptParseScore(localParsed) >
+              _receiptParseScore(serverParsed)) {
+            parsed = localParsed;
+            scanNotice ??=
+                'Serwer zwrócił słabszy odczyt niż lokalny OCR. Sprawdź dane przed zapisem.';
+          } else {
+            parsed = serverParsed;
+          }
         } on ReceiptAiException catch (error) {
           scanNotice =
               'Serwer nie odczytał paragonu automatycznie. Używam lokalnego OCR: ${error.message}';
@@ -972,6 +980,29 @@ class _EmptyReceipts extends StatelessWidget {
       ),
     );
   }
+}
+
+int _receiptParseScore(ParsedReceipt receipt) {
+  var score = 0;
+  if ((receipt.storeName ?? '').trim().isNotEmpty) {
+    score += 1;
+  }
+  if (receipt.total > 0) {
+    score += 3;
+  }
+  score += receipt.items.length * 4;
+  if (!_receiptItemsLookCoherent(receipt)) {
+    score -= 8;
+  }
+  return score;
+}
+
+bool _receiptItemsLookCoherent(ParsedReceipt receipt) {
+  if (receipt.items.isEmpty || receipt.total <= 0) {
+    return true;
+  }
+  final sum = receipt.items.fold<double>(0, (total, item) => total + item.price);
+  return sum <= receipt.total * 1.2;
 }
 
 Uint8List? _decodeReceiptImage(String? imageData) {

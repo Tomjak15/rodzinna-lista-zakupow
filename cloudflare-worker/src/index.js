@@ -1,4 +1,7 @@
 const schemaVersion = 6;
+const defaultWorkersAiTextModel = "@cf/mistralai/mistral-small-3.1-24b-instruct";
+const defaultWorkersAiVisionModel = "@cf/llava-hf/llava-1.5-7b-hf";
+const fallbackWorkersAiVisionModel = "";
 
 const tables = {
   families: {
@@ -368,6 +371,9 @@ async function scanRecipe(request, env) {
     body,
     apiKey: env.OPENAI_API_KEY,
     model: env.OPENAI_RECIPE_MODEL || "gpt-4.1-mini",
+    workersAi: env.AI,
+    workersAiModel:
+      env.CLOUDFLARE_RECIPE_VISION_MODEL || defaultWorkersAiVisionModel,
   });
   return json(result);
 }
@@ -378,6 +384,9 @@ async function scanReceipt(request, env) {
     body,
     apiKey: env.OPENAI_API_KEY,
     model: env.OPENAI_RECEIPT_MODEL || "gpt-4.1-mini",
+    workersAi: env.AI,
+    workersAiModel:
+      env.CLOUDFLARE_RECEIPT_VISION_MODEL || defaultWorkersAiVisionModel,
   });
   return json(result);
 }
@@ -542,7 +551,13 @@ function boolToInt(value) {
   return 0;
 }
 
-async function scanReceiptFromRequest({ body, apiKey, model }) {
+async function scanReceiptFromRequest({
+  body,
+  apiKey,
+  model,
+  workersAi,
+  workersAiModel,
+}) {
   const text = cleanText(body?.text);
   const imageData = cleanText(body?.imageData);
   const imageMimeType = cleanText(body?.imageMimeType) || "image/jpeg";
@@ -573,14 +588,72 @@ async function scanReceiptFromRequest({ body, apiKey, model }) {
     }
   }
 
+  const textFallback = text
+    ? normalizeReceiptScanDraft(parseReceiptTextFallback(text))
+    : null;
+  if (textFallback && isReceiptScanUseful(textFallback)) {
+    return textFallback;
+  }
+
+  if (text && workersAi) {
+    try {
+      const aiTextResult = normalizeReceiptScanDraft(
+        await scanReceiptTextWithWorkersAi({
+          workersAi,
+          text,
+        }),
+      );
+      if (isReceiptScanUseful(aiTextResult)) {
+        return aiTextResult;
+      }
+    } catch (error) {
+      console.warn(
+        "Workers AI receipt text scan failed, using fallback:",
+        error.message,
+      );
+    }
+  }
+
+  if (textFallback && (textFallback.items.length > 0 || textFallback.total > 0)) {
+    return textFallback;
+  }
+
+  if (imageData && workersAi) {
+    try {
+      const imageAiResult = normalizeReceiptScanDraft(
+        await scanReceiptWithWorkersAi({
+          workersAi,
+          model: workersAiModel,
+          text,
+          imageData,
+          imageMimeType,
+        }),
+      );
+      return isReceiptScanCoherent(imageAiResult)
+        ? imageAiResult
+        : { ...imageAiResult, items: [] };
+    } catch (error) {
+      if (!text) {
+        throw new ApiError(
+          `Nie udalo sie odczytac zdjecia paragonu: ${error.message}`,
+          error.statusCode || 502,
+        );
+      }
+      console.warn(
+        "Workers AI receipt scan failed, using text fallback:",
+        error.message,
+      );
+    }
+  }
+
   if (!text) {
     throw new ApiError(
-      "AI nie jest jeszcze skonfigurowane. Ustaw OPENAI_API_KEY w Cloudflare.",
+      "Nie udalo sie odczytac zdjecia. Zrob wyrazniejsze zdjecie albo wpisz tekst recznie.",
       503,
     );
   }
 
-  return normalizeReceiptScanDraft(parseReceiptTextFallback(text));
+  return textFallback;
 }
 
 async function scanReceiptWithOpenAi({
@@ -645,6 +718,64 @@ async function scanReceiptWithOpenAi({
     throw new ApiError("AI nie zwróciło paragonu.", 502);
   }
   return JSON.parse(outputText);
+}
+
+async function scanReceiptTextWithWorkersAi({ workersAi, text }) {
+  const outputText = await runWorkersAiTextJson({
+    workersAi,
+    model: defaultWorkersAiTextModel,
+    schema: receiptScanJsonSchema(),
+    system:
+      "Jestes dokladnym parserem polskich paragonow. Odpowiadasz tylko poprawnym JSON.",
+    prompt: [
+      "Z tekstu OCR paragonu wyciagnij sklep, kwote razem i produkty.",
+      "Pomin NIP, numer paragonu, VAT, platnosc, kody, losowe numery i reklamy.",
+      "Jesli produkt ma tylko cene, ustaw ilosc 1 i jednostke szt.",
+      'Zwroc tylko JSON w formacie: {"storeName":"Sklep","total":0,"items":[{"name":"Produkt","quantity":1,"unit":"szt.","price":0}]}',
+      `Tekst OCR:\n${text}`,
+    ].join("\n"),
+  });
+  return parseAiJsonObject(outputText);
+}
+
+async function scanReceiptWithWorkersAi({
+  workersAi,
+  model,
+  text,
+  imageData,
+  imageMimeType,
+}) {
+  return runWorkersAiVisionObject({
+    workersAi,
+    model,
+    imageData,
+    imageMimeType,
+    system:
+      "Jestes dokladnym parserem polskich paragonow. Odpowiadasz tylko poprawnym JSON.",
+    prompt: [
+      "Odczytaj paragon ze zdjecia. Tekst OCR traktuj tylko jako podpowiedz, bo moze byc pusty albo bledny.",
+      "Pomin NIP, numer paragonu, VAT, platnosc, kody, losowe numery i reklamy.",
+      "Znajdz sklep, kwote razem oraz produkty.",
+      "Dla produktow podaj nazwe, ilosc, jednostke i cene koncowa z paragonu.",
+      "Jesli ilosci nie widac, ustaw 1 i jednostke szt.",
+      'Zwroc tylko JSON w formacie: {"storeName":"Sklep","total":0,"items":[{"name":"Produkt","quantity":1,"unit":"szt.","price":0}]}',
+      text ? `Tekst OCR/uzytkownika:\n${text}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  });
+}
+
+function isReceiptScanUseful(value) {
+  return value.items.length > 0 && value.total > 0;
+}
+
+function isReceiptScanCoherent(value) {
+  if (value.items.length === 0 || value.total <= 0) {
+    return true;
+  }
+  const sum = value.items.reduce((total, item) => total + item.price, 0);
+  return sum <= value.total * 1.15;
 }
 
 function receiptScanJsonSchema() {
@@ -771,7 +902,13 @@ function normalizeReceiptScanDraft(value) {
   };
 }
 
-async function scanRecipeFromRequest({ body, apiKey, model }) {
+async function scanRecipeFromRequest({
+  body,
+  apiKey,
+  model,
+  workersAi,
+  workersAiModel,
+}) {
   const text = cleanText(body?.text);
   const imageData = cleanText(body?.imageData);
   const imageMimeType = cleanText(body?.imageMimeType) || "image/jpeg";
@@ -799,9 +936,55 @@ async function scanRecipeFromRequest({ body, apiKey, model }) {
     }
   }
 
+  const textFallback = text ? tryParseRecipeTextFallback(text) : null;
+  if (textFallback) {
+    return textFallback;
+  }
+
+  if (text && workersAi) {
+    try {
+      return normalizeRecipeScanDraft(
+        await scanRecipeTextWithWorkersAi({
+          workersAi,
+          text,
+        }),
+      );
+    } catch (error) {
+      console.warn(
+        "Workers AI recipe text scan failed, using image fallback:",
+        error.message,
+      );
+    }
+  }
+
+  if (imageData && workersAi) {
+    try {
+      return normalizeRecipeScanDraft(
+        await scanRecipeWithWorkersAi({
+          workersAi,
+          model: workersAiModel,
+          text,
+          imageData,
+          imageMimeType,
+        }),
+      );
+    } catch (error) {
+      if (!text) {
+        throw new ApiError(
+          `Nie udalo sie odczytac zdjecia przepisu: ${error.message}`,
+          error.statusCode || 502,
+        );
+      }
+      console.warn(
+        "Workers AI recipe scan failed, using text fallback:",
+        error.message,
+      );
+    }
+  }
+
   if (!text) {
     throw new ApiError(
-      "AI nie jest jeszcze skonfigurowane. Ustaw OPENAI_API_KEY w Cloudflare.",
+      "Nie udalo sie odczytac zdjecia. Zrob wyrazniejsze zdjecie albo wpisz tekst recznie.",
       503,
     );
   }
@@ -868,6 +1051,53 @@ async function scanRecipeWithOpenAi({ apiKey, model, text, imageData, imageMimeT
   return JSON.parse(outputText);
 }
 
+async function scanRecipeTextWithWorkersAi({ workersAi, text }) {
+  const outputText = await runWorkersAiTextJson({
+    workersAi,
+    model: defaultWorkersAiTextModel,
+    schema: recipeScanJsonSchema(),
+    system:
+      "Jestes dokladnym parserem polskich przepisow kulinarnych. Odpowiadasz tylko poprawnym JSON.",
+    prompt: [
+      "Z tekstu OCR przepisu wyciagnij nazwe, kategorie, instrukcje, porcje, makro i skladniki.",
+      `Kategorie dozwolone: ${allowedRecipeCategories().join(", ")}.`,
+      "Jesli kcal, bialka, tluszczu albo weglowodanow nie ma, ustaw 0.",
+      "Skladniki zapisz jako nazwa, ilosc i jednostka. Nie dodawaj skladnikow, ktorych nie ma w tekscie.",
+      'Zwroc tylko JSON w formacie: {"name":"Nazwa","category":"Obiady","instructions":"Opis","baseServings":4,"caloriesPerServing":0,"proteinPerServing":0,"fatPerServing":0,"carbsPerServing":0,"ingredients":[{"name":"Produkt","quantity":1,"unit":"szt."}]}',
+      `Tekst OCR:\n${text}`,
+    ].join("\n"),
+  });
+  return parseAiJsonObject(outputText);
+}
+
+async function scanRecipeWithWorkersAi({
+  workersAi,
+  model,
+  text,
+  imageData,
+  imageMimeType,
+}) {
+  return runWorkersAiVisionObject({
+    workersAi,
+    model,
+    imageData,
+    imageMimeType,
+    system:
+      "Jestes dokladnym parserem polskich przepisow kulinarnych. Odpowiadasz tylko poprawnym JSON.",
+    prompt: [
+      "Odczytaj przepis ze zdjecia. Tekst OCR traktuj tylko jako podpowiedz, bo moze byc pusty albo bledny.",
+      "Wyciagnij nazwe, kategorie, opis przygotowania, liczbe porcji, makro na porcje oraz skladniki.",
+      `Kategorie dozwolone: ${allowedRecipeCategories().join(", ")}.`,
+      "Jesli kcal, bialka, tluszczu albo weglowodanow nie ma, ustaw 0.",
+      "Skladniki zapisz jako nazwa, ilosc i jednostka. Nie dodawaj skladnikow, ktorych nie widac.",
+      'Zwroc tylko JSON w formacie: {"name":"Nazwa","category":"Obiady","instructions":"Opis","baseServings":4,"caloriesPerServing":0,"proteinPerServing":0,"fatPerServing":0,"carbsPerServing":0,"ingredients":[{"name":"Produkt","quantity":1,"unit":"szt."}]}',
+      text ? `Tekst OCR/uzytkownika:\n${text}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  });
+}
+
 function recipeScanJsonSchema() {
   return {
     type: "object",
@@ -925,6 +1155,172 @@ function extractOpenAiOutputText(payload) {
     }
   }
   return "";
+}
+
+async function runWorkersAiTextJson({
+  workersAi,
+  model,
+  schema,
+  system,
+  prompt,
+}) {
+  if (!workersAi) {
+    throw new ApiError("Cloudflare AI nie jest podlaczone do Workera.", 503);
+  }
+  const response = await workersAi.run(model || defaultWorkersAiTextModel, {
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: prompt },
+    ],
+    guided_json: schema,
+    max_tokens: 1800,
+    temperature: 0.1,
+  });
+  const outputText = extractWorkersAiOutputText(response);
+  if (!outputText) {
+    throw new ApiError("AI nie zwrocilo tekstu z danymi.", 502);
+  }
+  return outputText;
+}
+
+async function runWorkersAiVisionObject(options) {
+  let lastError = null;
+  for (const model of workersAiModelCandidates(options.model)) {
+    try {
+      const outputText = await runWorkersAiVisionJson({
+        ...options,
+        model,
+      });
+      return parseAiJsonObject(outputText);
+    } catch (error) {
+      lastError = error;
+      console.warn(`Workers AI model ${model} failed:`, error.message);
+    }
+  }
+
+  if (lastError instanceof ApiError) {
+    throw lastError;
+  }
+  throw new ApiError(
+    lastError?.message || "Cloudflare AI nie odczytalo obrazu.",
+    lastError?.statusCode || 502,
+  );
+}
+
+function workersAiModelCandidates(model) {
+  const values = cleanText(model)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return [...values, defaultWorkersAiVisionModel, fallbackWorkersAiVisionModel]
+    .filter(Boolean)
+    .filter((item, index, array) => array.indexOf(item) === index);
+}
+
+async function runWorkersAiVisionJson({
+  workersAi,
+  model,
+  imageData,
+  imageMimeType,
+  system,
+  prompt,
+}) {
+  if (!workersAi) {
+    throw new ApiError("Cloudflare AI nie jest podlaczone do Workera.", 503);
+  }
+
+  const modelName = model || defaultWorkersAiVisionModel;
+  const response = modelName.includes("/llava-")
+    ? await workersAi.run(modelName, {
+        image: base64ToByteArray(imageData),
+        prompt: `${system}\n\n${prompt}`,
+        max_tokens: 1800,
+      })
+    : await workersAi.run(modelName, {
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: prompt },
+        ],
+        image: `data:${imageMimeType};base64,${imageData}`,
+        max_tokens: 1800,
+        temperature: 0.1,
+      });
+
+  const outputText = extractWorkersAiOutputText(response);
+  if (!outputText) {
+    throw new ApiError("AI nie zwrocilo tekstu z odczytem obrazu.", 502);
+  }
+  return outputText;
+}
+
+function extractWorkersAiOutputText(payload) {
+  if (!payload) {
+    return "";
+  }
+  if (typeof payload === "string") {
+    return payload;
+  }
+  if (typeof payload.response === "string") {
+    return payload.response;
+  }
+  if (typeof payload.text === "string") {
+    return payload.text;
+  }
+  if (typeof payload.output_text === "string") {
+    return payload.output_text;
+  }
+  if (typeof payload.description === "string") {
+    return payload.description;
+  }
+  if (typeof payload.result === "string") {
+    return payload.result;
+  }
+  if (payload.result && typeof payload.result === "object") {
+    return extractWorkersAiOutputText(payload.result);
+  }
+  if (Array.isArray(payload.output)) {
+    return payload.output.map(extractWorkersAiOutputText).filter(Boolean).join("\n");
+  }
+  return "";
+}
+
+function base64ToByteArray(value) {
+  const binary = atob(value.replace(/^data:[^,]+,/, ""));
+  const bytes = new Array(binary.length);
+  for (let index = 0; index < binary.length; index++) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function parseAiJsonObject(text) {
+  const trimmed = cleanText(text)
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  try {
+    return JSON.parse(trimmed);
+  } catch (_) {
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(trimmed.slice(start, end + 1));
+      } catch (_) {
+        throw new ApiError("AI nie zwrocilo poprawnego JSON.", 502);
+      }
+    }
+    throw new ApiError("AI nie zwrocilo poprawnego JSON.", 502);
+  }
+}
+
+function tryParseRecipeTextFallback(text) {
+  try {
+    return normalizeRecipeScanDraft(parseRecipeTextFallback(text));
+  } catch (_) {
+    return null;
+  }
 }
 
 function parseRecipeTextFallback(text) {
