@@ -589,6 +589,7 @@ class _RecipeDialogState extends State<_RecipeDialog> {
   late final TextEditingController _fatController;
   late final TextEditingController _carbsController;
   late final List<_IngredientLineController> _ingredientLines;
+  late int _ingredientBaseServings;
 
   @override
   void initState() {
@@ -606,11 +607,12 @@ class _RecipeDialogState extends State<_RecipeDialog> {
     _instructionsController = TextEditingController(
       text: recipe?.instructions ?? initialDraft?.instructions ?? '',
     );
+    _ingredientBaseServings = max(
+      1,
+      recipe?.baseServings ?? initialDraft?.baseServings ?? 1,
+    );
     _servingsController = TextEditingController(
-      text:
-          recipe?.baseServings.toString() ??
-          initialDraft?.baseServings.toString() ??
-          '4',
+      text: _ingredientBaseServings.toString(),
     );
     _caloriesController = TextEditingController(
       text:
@@ -820,9 +822,23 @@ class _RecipeDialogState extends State<_RecipeDialog> {
     );
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (!_formKey.currentState!.validate()) {
       return;
+    }
+    final baseServings = max(1, int.tryParse(_servingsController.text) ?? 1);
+    if (baseServings != _ingredientBaseServings) {
+      final shouldScale = await _confirmIngredientScale(baseServings);
+      if (shouldScale == null || !mounted) {
+        return;
+      }
+      if (shouldScale) {
+        final factor = baseServings / _ingredientBaseServings;
+        for (final line in _ingredientLines) {
+          line.scaleQuantity(factor);
+        }
+      }
+      _ingredientBaseServings = baseServings;
     }
     final ingredients = _ingredientLines
         .map((line) => line.toDraft())
@@ -837,12 +853,41 @@ class _RecipeDialogState extends State<_RecipeDialog> {
         name: _nameController.text.trim(),
         category: _category,
         instructions: _instructionsController.text.trim(),
-        baseServings: max(1, int.tryParse(_servingsController.text) ?? 1),
+        baseServings: baseServings,
         caloriesPerServing: _parseInt(_caloriesController.text),
         proteinPerServing: _parseDouble(_proteinController.text),
         fatPerServing: _parseDouble(_fatController.text),
         carbsPerServing: _parseDouble(_carbsController.text),
         ingredients: ingredients,
+      ),
+    );
+  }
+
+  Future<bool?> _confirmIngredientScale(int newBaseServings) {
+    final previousBaseServings = _ingredientBaseServings;
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Przeliczyć składniki?'),
+        content: Text(
+          'Zmieniasz porcje bazowe z $previousBaseServings na '
+          '$newBaseServings. Czy zmienić ilości składników w tej samej '
+          'proporcji?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Anuluj'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Tylko porcje'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Przelicz składniki'),
+          ),
+        ],
       ),
     );
   }
@@ -892,6 +937,15 @@ class _IngredientLineController {
           ? 'szt.'
           : unitController.text.trim(),
     );
+  }
+
+  void scaleQuantity(double factor) {
+    final quantity =
+        double.tryParse(quantityController.text.replaceAll(',', '.')) ?? 0;
+    if (quantity <= 0 || factor <= 0) {
+      return;
+    }
+    quantityController.text = formatQuantity(quantity * factor);
   }
 
   void dispose() {
@@ -1334,10 +1388,18 @@ Future<void> _openAddToShoppingDialog(
       ingredientsToAdd.isEmpty) {
     return;
   }
-  await AppScope.of(context).addIngredientsToShoppingList(ingredientsToAdd);
+  final addedCount = await AppScope.of(
+    context,
+  ).addIngredientsToShoppingList(ingredientsToAdd);
   if (context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Składniki dodane do listy zakupów')),
+      SnackBar(
+        content: Text(
+          addedCount > 0
+              ? 'Dodano składniki do listy zakupów ($addedCount)'
+              : 'Nie dodano składników do listy',
+        ),
+      ),
     );
   }
 }

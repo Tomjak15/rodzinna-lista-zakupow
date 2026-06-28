@@ -33,7 +33,7 @@ class RecipeScanDraft {
       name: (json['name'] ?? '').toString().trim(),
       category: (json['category'] ?? 'Obiady').toString().trim(),
       instructions: (json['instructions'] ?? '').toString().trim(),
-      baseServings: _toInt(json['baseServings'], fallback: 4).clamp(1, 99),
+      baseServings: _toInt(json['baseServings'], fallback: 1).clamp(1, 99),
       caloriesPerServing: _toInt(json['caloriesPerServing']),
       proteinPerServing: _toDouble(json['proteinPerServing']),
       fatPerServing: _toDouble(json['fatPerServing']),

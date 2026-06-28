@@ -418,8 +418,14 @@ class AppState extends ChangeNotifier {
     required String unit,
   }) async {
     final now = DateTime.now().toUtc();
-    _mergeShoppingItem(name: name, quantity: quantity, unit: unit, now: now);
-    await _persist(scheduleSync: true);
+    if (_mergeShoppingItem(
+      name: name,
+      quantity: quantity,
+      unit: unit,
+      now: now,
+    )) {
+      await _persist(scheduleSync: true);
+    }
   }
 
   Future<void> updateShoppingItem({
@@ -626,13 +632,14 @@ class AppState extends ChangeNotifier {
       if (item.name.trim().isEmpty || item.quantity <= 0) {
         continue;
       }
-      _mergeShoppingItem(
+      if (_mergeShoppingItem(
         name: item.name,
         quantity: item.quantity,
         unit: item.unit,
         now: now,
-      );
-      addedCount++;
+      )) {
+        addedCount++;
+      }
     }
     if (addedCount > 0) {
       await _persist(scheduleSync: true);
@@ -946,13 +953,14 @@ class AppState extends ChangeNotifier {
       if (item.name.trim().isEmpty || item.quantity <= 0) {
         continue;
       }
-      _mergeShoppingItem(
+      if (_mergeShoppingItem(
         name: item.name,
         quantity: item.quantity,
         unit: item.unit,
         now: now,
-      );
-      addedCount++;
+      )) {
+        addedCount++;
+      }
     }
     if (addedCount > 0) {
       await _persist(scheduleSync: true);
@@ -1485,15 +1493,18 @@ class AppState extends ChangeNotifier {
       return false;
     }
 
+    var addedCount = 0;
     for (final item in groupedIngredients) {
-      _mergeShoppingItem(
+      if (_mergeShoppingItem(
         name: item.name,
         quantity: item.quantity,
         unit: item.unit,
         now: now,
-      );
+      )) {
+        addedCount++;
+      }
     }
-    return true;
+    return addedCount > 0;
   }
 
   AppData _dataWithRemovedMember({
@@ -1657,7 +1668,7 @@ class AppState extends ChangeNotifier {
         .toList();
   }
 
-  void _mergeShoppingItem({
+  bool _mergeShoppingItem({
     required String name,
     required double quantity,
     required String unit,
@@ -1669,7 +1680,7 @@ class AppState extends ChangeNotifier {
         member == null ||
         name.trim().isEmpty ||
         quantity <= 0) {
-      return;
+      return false;
     }
 
     final cleanUnit = normalizeIngredientUnit(unit);
@@ -1691,7 +1702,7 @@ class AppState extends ChangeNotifier {
         syncStatus: SyncStatus.pending,
       );
       _data = _data.copyWith(shoppingItems: updated);
-      return;
+      return true;
     }
 
     _data = _data.copyWith(
@@ -1713,6 +1724,7 @@ class AppState extends ChangeNotifier {
         ),
       ],
     );
+    return true;
   }
 
   Future<void> _persist({required bool scheduleSync}) async {
