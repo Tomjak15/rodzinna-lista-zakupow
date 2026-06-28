@@ -417,12 +417,14 @@ class AppState extends ChangeNotifier {
     required String name,
     required double quantity,
     required String unit,
+    String? category,
   }) async {
     final now = DateTime.now().toUtc();
     if (_mergeShoppingItem(
       name: name,
       quantity: quantity,
       unit: unit,
+      category: _cleanShoppingCategory(category),
       now: now,
     )) {
       await _persist(scheduleSync: true);
@@ -434,8 +436,11 @@ class AppState extends ChangeNotifier {
     required String name,
     required double quantity,
     required String unit,
+    String? category,
+    bool updateCategory = false,
   }) async {
     final now = DateTime.now().toUtc();
+    final cleanCategory = _cleanShoppingCategory(category);
     _data = _data.copyWith(
       shoppingItems: _data.shoppingItems
           .map(
@@ -444,6 +449,8 @@ class AppState extends ChangeNotifier {
                     name: name.trim(),
                     quantity: quantity,
                     unit: normalizeIngredientUnit(unit),
+                    category: updateCategory ? cleanCategory : null,
+                    clearCategory: updateCategory && cleanCategory == null,
                     updatedAt: now,
                     syncStatus: SyncStatus.pending,
                   )
@@ -1832,6 +1839,7 @@ class AppState extends ChangeNotifier {
     required String name,
     required double quantity,
     required String unit,
+    String? category,
     required DateTime now,
   }) {
     final family = _data.family;
@@ -1856,6 +1864,7 @@ class AppState extends ChangeNotifier {
       final existing = updated[existingIndex];
       updated[existingIndex] = existing.copyWith(
         quantity: existing.quantity + quantity,
+        category: category,
         isPurchased: false,
         authorName: member.name,
         updatedAt: now,
@@ -1874,6 +1883,7 @@ class AppState extends ChangeNotifier {
           name: name.trim(),
           quantity: quantity,
           unit: cleanUnit,
+          category: category,
           authorName: member.name,
           isPurchased: false,
           createdAt: now,
@@ -1885,6 +1895,14 @@ class AppState extends ChangeNotifier {
       ],
     );
     return true;
+  }
+
+  String? _cleanShoppingCategory(String? category) {
+    final clean = category?.trim();
+    if (clean == null || clean.isEmpty) {
+      return null;
+    }
+    return clean;
   }
 
   Future<void> _persist({required bool scheduleSync}) async {

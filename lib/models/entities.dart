@@ -526,6 +526,7 @@ class ShoppingItem {
     required this.name,
     required this.quantity,
     required this.unit,
+    this.category,
     required this.authorName,
     required this.isPurchased,
     required this.createdAt,
@@ -542,6 +543,7 @@ class ShoppingItem {
       name: json['name']?.toString() ?? '',
       quantity: doubleFromJson(json['quantity']),
       unit: json['unit']?.toString() ?? '',
+      category: nullableString(json['category']),
       authorName:
           json['authorName']?.toString() ??
           json['author_name']?.toString() ??
@@ -563,6 +565,7 @@ class ShoppingItem {
       name: json['name']?.toString() ?? '',
       quantity: doubleFromJson(json['quantity']),
       unit: json['unit']?.toString() ?? '',
+      category: nullableString(json['category']),
       authorName: json['author_name']?.toString() ?? '',
       isPurchased: boolFromJson(json['is_purchased']),
       createdAt: dateFromJson(json['created_at']),
@@ -578,6 +581,7 @@ class ShoppingItem {
   final String name;
   final double quantity;
   final String unit;
+  final String? category;
   final String authorName;
   final bool isPurchased;
   final DateTime createdAt;
@@ -593,6 +597,7 @@ class ShoppingItem {
       'name': name,
       'quantity': quantity,
       'unit': unit,
+      'category': category,
       'authorName': authorName,
       'isPurchased': isPurchased,
       'createdAt': createdAt.toIso8601String(),
@@ -610,6 +615,7 @@ class ShoppingItem {
       'name': name,
       'quantity': quantity,
       'unit': unit,
+      'category': category,
       'author_name': authorName,
       'is_purchased': isPurchased,
       'created_at': createdAt.toIso8601String(),
@@ -625,6 +631,8 @@ class ShoppingItem {
     String? name,
     double? quantity,
     String? unit,
+    String? category,
+    bool clearCategory = false,
     String? authorName,
     bool? isPurchased,
     DateTime? createdAt,
@@ -639,6 +647,7 @@ class ShoppingItem {
       name: name ?? this.name,
       quantity: quantity ?? this.quantity,
       unit: unit ?? this.unit,
+      category: clearCategory ? null : category ?? this.category,
       authorName: authorName ?? this.authorName,
       isPurchased: isPurchased ?? this.isPurchased,
       createdAt: createdAt ?? this.createdAt,

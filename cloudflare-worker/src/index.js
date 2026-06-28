@@ -1,4 +1,4 @@
-const schemaVersion = 6;
+const schemaVersion = 7;
 const defaultWorkersAiTextModel = "@cf/mistralai/mistral-small-3.1-24b-instruct";
 const defaultWorkersAiVisionModel = "@cf/meta/llama-3.2-11b-vision-instruct";
 const fallbackWorkersAiVisionModel = "@cf/llava-hf/llava-1.5-7b-hf";
@@ -41,6 +41,7 @@ const tables = {
       "name",
       "quantity",
       "unit",
+      "category",
       "author_name",
       "is_purchased",
       "created_at",
@@ -566,7 +567,11 @@ function defaultMissingValue(table, config, column) {
     }
     return 0;
   }
-  if (column === "parent_recipe_id" || column === "member_id") {
+  if (
+    column === "parent_recipe_id" ||
+    column === "member_id" ||
+    column === "category"
+  ) {
     return null;
   }
   if (column === "recipe_category") {

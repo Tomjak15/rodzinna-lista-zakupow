@@ -29,6 +29,7 @@ create table if not exists shopping_items (
   name text not null,
   quantity real not null default 1,
   unit text not null default 'szt.',
+  category text,
   author_name text not null default '',
   is_purchased integer not null default 0,
   created_at text not null,

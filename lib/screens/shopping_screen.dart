@@ -10,6 +10,8 @@ import '../models/entities.dart';
 import '../services/product_category_ai_service.dart';
 import '../utils/product_category.dart';
 
+const _automaticShoppingCategory = 'Automatycznie';
+
 class ShoppingScreen extends StatefulWidget {
   const ShoppingScreen({super.key});
 
@@ -74,7 +76,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
               ...purchasedItems.map(
                 (item) => _ShoppingRow(
                   item: item,
-                  category: _categoryForProductName(item.name),
+                  category: _categoryForItem(item),
                   shopMode: false,
                   onEdit: () => _openProductDialog(context, item: item),
                 ),
@@ -100,7 +102,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
   }) {
     final grouped = <String, List<ShoppingItem>>{};
     for (final item in items) {
-      final category = _categoryForProductName(item.name);
+      final category = _categoryForItem(item);
       grouped.putIfAbsent(category, () => []).add(item);
     }
 
@@ -111,13 +113,21 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
         ...grouped[category]!.map(
           (item) => _ShoppingRow(
             item: item,
-            category: _categoryForProductName(item.name),
+            category: _categoryForItem(item),
             shopMode: shopMode,
             onEdit: () => onEdit(item),
           ),
         ),
       ],
     ];
+  }
+
+  String _categoryForItem(ShoppingItem item) {
+    final manualCategory = item.category?.trim();
+    if (manualCategory != null && manualCategory.isNotEmpty) {
+      return manualCategory;
+    }
+    return _categoryForProductName(item.name);
   }
 
   String _categoryForProductName(String productName) {
@@ -148,6 +158,10 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
     ];
 
     for (final item in items) {
+      final manualCategory = item.category?.trim();
+      if (manualCategory != null && manualCategory.isNotEmpty) {
+        continue;
+      }
       final key = productCategoryCacheKey(item.name);
       if (key.isEmpty ||
           _aiCategories.containsKey(key) ||
@@ -204,6 +218,8 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
       name: draft.name,
       quantity: draft.quantity,
       unit: draft.unit,
+      category: draft.category,
+      updateCategory: true,
     );
   }
 
@@ -845,11 +861,13 @@ class _ProductDraft {
     required this.name,
     required this.quantity,
     required this.unit,
+    required this.category,
   });
 
   final String name;
   final double quantity;
   final String unit;
+  final String? category;
 }
 
 class _ProductDialog extends StatefulWidget {
@@ -866,6 +884,7 @@ class _ProductDialogState extends State<_ProductDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _quantityController;
   late final TextEditingController _unitController;
+  late String _selectedCategory;
 
   @override
   void initState() {
@@ -875,6 +894,10 @@ class _ProductDialogState extends State<_ProductDialog> {
       text: formatQuantity(widget.item.quantity),
     );
     _unitController = TextEditingController(text: widget.item.unit);
+    final currentCategory = widget.item.category?.trim();
+    _selectedCategory = currentCategory == null || currentCategory.isEmpty
+        ? _automaticShoppingCategory
+        : currentCategory;
   }
 
   @override
@@ -930,6 +953,25 @@ class _ProductDialogState extends State<_ProductDialog> {
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: _selectedCategory,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Kategoria'),
+                items: _categoryOptions
+                    .map(
+                      (category) => DropdownMenuItem(
+                        value: category,
+                        child: Text(category),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _selectedCategory = value);
+                  }
+                },
+              ),
             ],
           ),
         ),
@@ -954,8 +996,23 @@ class _ProductDialogState extends State<_ProductDialog> {
         name: _nameController.text.trim(),
         quantity: _parseQuantity(_quantityController.text),
         unit: _unitController.text.trim(),
+        category: _selectedCategory == _automaticShoppingCategory
+            ? null
+            : _selectedCategory,
       ),
     );
+  }
+
+  List<String> get _categoryOptions {
+    final options = <String>[
+      _automaticShoppingCategory,
+      ...productCategories.map((category) => category.name),
+      'Inne',
+    ];
+    if (!options.contains(_selectedCategory)) {
+      options.add(_selectedCategory);
+    }
+    return options;
   }
 
   double _parseQuantity(String value) {
@@ -968,13 +1025,21 @@ int _compareItems(ShoppingItem a, ShoppingItem b) {
     return a.isPurchased ? 1 : -1;
   }
   final categoryCompare = _compareCategories(
-    categoryForProduct(a.name),
-    categoryForProduct(b.name),
+    _storedOrLocalCategory(a),
+    _storedOrLocalCategory(b),
   );
   if (categoryCompare != 0) {
     return categoryCompare;
   }
   return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+}
+
+String _storedOrLocalCategory(ShoppingItem item) {
+  final category = item.category?.trim();
+  if (category != null && category.isNotEmpty) {
+    return category;
+  }
+  return categoryForProduct(item.name);
 }
 
 int _compareCategories(String a, String b) {

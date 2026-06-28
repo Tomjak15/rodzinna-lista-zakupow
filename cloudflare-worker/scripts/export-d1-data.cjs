@@ -57,6 +57,7 @@ const tables = [
       "name",
       "quantity",
       "unit",
+      "category",
       "author_name",
       "is_purchased",
       "created_at",
