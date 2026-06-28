@@ -26,7 +26,7 @@ class _MealsScreenState extends State<MealsScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = AppScope.of(context);
-    final allMeals = [...appState.data.activeMeals]
+    final allMeals = [...appState.data.activeRecipeMeals]
       ..sort((a, b) => a.name.compareTo(b.name));
     final meals = _selectedCategory == 'Wszystkie'
         ? allMeals
@@ -185,9 +185,9 @@ class _MealsScreenState extends State<MealsScreen> {
     if (_selectedCategory != 'Wszystkie') {
       setState(() => _selectedCategory = 'Wszystkie');
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Zapisano przepis: ${meal.name}')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Zapisano przepis: ${meal.name}')));
   }
 }
 

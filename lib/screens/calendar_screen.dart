@@ -160,7 +160,7 @@ class _MealCalendar extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = AppScope.of(context);
     final plans = appState.mealPlansForDate(date);
-    final meals = [...appState.data.activeMeals]
+    final meals = [...appState.data.activeRecipeMeals]
       ..sort((a, b) => a.name.compareTo(b.name));
 
     return Column(

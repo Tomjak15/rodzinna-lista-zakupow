@@ -154,6 +154,33 @@ class AppData {
   List<Recipe> get activeRecipes =>
       recipes.where((recipe) => !recipe.isDeleted).toList();
 
+  List<Meal> get activeRecipeMeals {
+    final result = [...activeMeals];
+    final knownMealIds = result.map((meal) => meal.id).toSet();
+
+    for (final recipe in activeRecipes) {
+      if (recipe.parentRecipeId != null ||
+          knownMealIds.contains(recipe.mealId)) {
+        continue;
+      }
+      result.add(
+        Meal(
+          id: recipe.mealId,
+          familyId: recipe.familyId,
+          name: recipe.name,
+          createdAt: recipe.createdAt,
+          updatedAt: recipe.updatedAt,
+          createdBy: recipe.createdBy,
+          isDeleted: false,
+          syncStatus: recipe.syncStatus,
+        ),
+      );
+      knownMealIds.add(recipe.mealId);
+    }
+
+    return result;
+  }
+
   List<RecipeIngredient> get activeRecipeIngredients =>
       recipeIngredients.where((ingredient) => !ingredient.isDeleted).toList();
 
