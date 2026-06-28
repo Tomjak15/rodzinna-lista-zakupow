@@ -1,4 +1,6 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rodzinna_lista_zakupow/app/app.dart';
 import 'package:rodzinna_lista_zakupow/app/app_state.dart';
 import 'package:rodzinna_lista_zakupow/data/local_store.dart';
 import 'package:rodzinna_lista_zakupow/models/ingredient_draft.dart';
@@ -88,5 +90,56 @@ void main() {
     });
 
     expect(draft.baseServings, 1);
+  });
+
+  testWidgets('klikniecie w przepisie dodaje skladniki do listy zakupow', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final store = await LocalStore.create();
+    final appState = AppState(store: store);
+    addTearDown(appState.dispose);
+
+    await appState.createFamily(familyName: 'Dom', memberName: 'Tomek');
+    await appState.addMealWithRecipe(
+      mealName: 'Owsianka',
+      instructions: 'Wymieszaj.',
+      baseServings: 1,
+      ingredients: const [
+        IngredientDraft(name: 'platki owsiane', quantity: 50, unit: 'g'),
+      ],
+    );
+
+    await tester.pumpWidget(RodzinnaListaApp(appState: appState));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Przepisy').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(ExpansionTile).first);
+    await tester.pumpAndSettle();
+    final addToListText = find.text('Dodaj do listy zakupów');
+    await tester.ensureVisible(addToListText);
+    await tester.drag(
+      find.byType(ListView).hitTestable().first,
+      const Offset(0, -220),
+    );
+    await tester.pumpAndSettle();
+    final addToListButton = find.ancestor(
+      of: addToListText,
+      matching: find.bySubtype<ButtonStyleButton>(),
+    );
+    await tester.tap(addToListButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dodaj').last);
+    await tester.pumpAndSettle();
+
+    expect(appState.data.activeShoppingItems, hasLength(1));
+    expect(appState.data.activeShoppingItems.single.name, 'platki owsiane');
+    expect(appState.data.activeShoppingItems.single.quantity, 50);
+    await tester.pump(const Duration(milliseconds: 700));
   });
 }

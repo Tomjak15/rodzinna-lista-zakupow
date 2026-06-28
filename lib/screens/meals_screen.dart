@@ -39,7 +39,7 @@ class _MealsScreenState extends State<MealsScreen> {
 
     return Scaffold(
       body: ListView(
-        padding: const EdgeInsets.only(top: 8, bottom: 96),
+        padding: const EdgeInsets.only(top: 8, bottom: 180),
         children: [
           _RecipeCategoryBar(
             selectedCategory: _selectedCategory,
@@ -1039,6 +1039,7 @@ class _AddToShoppingDialog extends StatefulWidget {
 class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
   late final TextEditingController _servingsController;
   bool _includeMain = true;
+  bool _saving = false;
   late final Set<String> _selectedSubRecipes;
   final Set<String> _excludedIngredientKeys = {};
   String? _selectionError;
@@ -1168,7 +1169,7 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Zaznacz składniki, których nie chcesz dodawać',
+                  'Odznacz składniki, których nie chcesz dodawać',
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
               ),
@@ -1183,13 +1184,13 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
                   final key = _ingredientKey(ingredient);
                   return CheckboxListTile(
                     contentPadding: EdgeInsets.zero,
-                    value: _excludedIngredientKeys.contains(key),
+                    value: !_excludedIngredientKeys.contains(key),
                     onChanged: (value) {
                       setState(() {
                         if (value ?? false) {
-                          _excludedIngredientKeys.add(key);
-                        } else {
                           _excludedIngredientKeys.remove(key);
+                        } else {
+                          _excludedIngredientKeys.add(key);
                         }
                         _selectionError = null;
                       });
@@ -1219,12 +1220,20 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Anuluj'),
         ),
-        FilledButton(onPressed: _save, child: const Text('Dodaj')),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: _saving
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Dodaj'),
+        ),
       ],
     );
   }
 
-  void _save() {
+  Future<void> _save() async {
     final recipeIds = _selectedRecipeIds();
     if (recipeIds.isEmpty) {
       setState(() {
@@ -1250,7 +1259,24 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
       });
       return;
     }
-    Navigator.pop(context, ingredientsToAdd);
+    setState(() {
+      _saving = true;
+      _selectionError = null;
+    });
+    final addedCount = await AppScope.of(
+      context,
+    ).addIngredientsToShoppingList(ingredientsToAdd);
+    if (!mounted) {
+      return;
+    }
+    if (addedCount == 0) {
+      setState(() {
+        _saving = false;
+        _selectionError = 'Nie udaĹ‚o siÄ™ dodaÄ‡ skĹ‚adnikĂłw do listy';
+      });
+      return;
+    }
+    Navigator.pop(context, addedCount);
   }
 
   List<String> _selectedRecipeIds() {
@@ -1378,19 +1404,14 @@ Future<void> _openAddToShoppingDialog(
   required Recipe mainRecipe,
   required List<Recipe> subRecipes,
 }) async {
-  final ingredientsToAdd = await showDialog<List<IngredientDraft>>(
+  final addedCount = await showDialog<int>(
     context: context,
     builder: (_) =>
         _AddToShoppingDialog(mainRecipe: mainRecipe, subRecipes: subRecipes),
   );
-  if (ingredientsToAdd == null ||
-      !context.mounted ||
-      ingredientsToAdd.isEmpty) {
+  if (addedCount == null || !context.mounted || addedCount <= 0) {
     return;
   }
-  final addedCount = await AppScope.of(
-    context,
-  ).addIngredientsToShoppingList(ingredientsToAdd);
   if (context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
