@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../app/app_scope.dart';
+import '../app/app_state.dart';
 import '../data/product_catalog.dart';
 import '../models/entities.dart';
+import '../services/product_category_ai_service.dart';
 import '../utils/product_category.dart';
 
 class ShoppingScreen extends StatefulWidget {
@@ -15,11 +19,22 @@ class ShoppingScreen extends StatefulWidget {
 
 class _ShoppingScreenState extends State<ShoppingScreen> {
   bool _shopMode = false;
+  final _aiCategories = <String, String>{};
+  final _aiCategoryRequests = <String>{};
+  ProductCategoryAiService? _categoryAiService;
+  String? _categoryAiServerUrl;
+
+  @override
+  void dispose() {
+    _categoryAiService?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final appState = AppScope.of(context);
     final items = [...appState.data.activeShoppingItems]..sort(_compareItems);
+    _scheduleAiCategoryUpdates(appState, items);
     final openItems = items.where((item) => !item.isPurchased).toList();
     final purchasedItems = items.where((item) => item.isPurchased).toList();
     final visibleOpenItems = _shopMode ? openItems : openItems;
@@ -59,6 +74,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
               ...purchasedItems.map(
                 (item) => _ShoppingRow(
                   item: item,
+                  category: _categoryForProductName(item.name),
                   shopMode: false,
                   onEdit: () => _openProductDialog(context, item: item),
                 ),
@@ -84,7 +100,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
   }) {
     final grouped = <String, List<ShoppingItem>>{};
     for (final item in items) {
-      final category = categoryForProduct(item.name);
+      final category = _categoryForProductName(item.name);
       grouped.putIfAbsent(category, () => []).add(item);
     }
 
@@ -95,12 +111,80 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
         ...grouped[category]!.map(
           (item) => _ShoppingRow(
             item: item,
+            category: _categoryForProductName(item.name),
             shopMode: shopMode,
             onEdit: () => onEdit(item),
           ),
         ),
       ],
     ];
+  }
+
+  String _categoryForProductName(String productName) {
+    final key = productCategoryCacheKey(productName);
+    return _aiCategories[key] ?? categoryForProduct(productName);
+  }
+
+  void _scheduleAiCategoryUpdates(AppState appState, List<ShoppingItem> items) {
+    if (!appState.backendConfigured || items.isEmpty) {
+      return;
+    }
+    if (_categoryAiServerUrl != appState.serverUrl) {
+      _categoryAiService?.dispose();
+      _categoryAiService = ProductCategoryAiService(appState.serverUrl);
+      _categoryAiServerUrl = appState.serverUrl;
+      _aiCategories.clear();
+      _aiCategoryRequests.clear();
+    }
+
+    final service = _categoryAiService;
+    if (service == null) {
+      return;
+    }
+
+    final hints = [
+      ...productCatalog.take(120).map((item) => item.name),
+      ...appState.data.activeFavoriteProducts.map((item) => item.name),
+    ];
+
+    for (final item in items) {
+      final key = productCategoryCacheKey(item.name);
+      if (key.isEmpty ||
+          _aiCategories.containsKey(key) ||
+          _aiCategoryRequests.contains(key)) {
+        continue;
+      }
+      final localCategory = categoryForProduct(item.name);
+      if (!_shouldAskAiForCategory(item.name, localCategory)) {
+        continue;
+      }
+      _aiCategoryRequests.add(key);
+      unawaited(
+        service
+            .classify(
+              productName: item.name,
+              familyId: appState.data.family?.id,
+              hints: hints,
+            )
+            .then((category) {
+              _aiCategoryRequests.remove(key);
+              if (!mounted || category == null) {
+                return;
+              }
+              if (_aiCategories[key] != category) {
+                setState(() => _aiCategories[key] = category);
+              }
+            })
+            .catchError((_) {
+              _aiCategoryRequests.remove(key);
+            }),
+      );
+    }
+  }
+
+  bool _shouldAskAiForCategory(String productName, String localCategory) {
+    final key = productCategoryCacheKey(productName);
+    return localCategory == 'Inne' || key.contains('kukurydz');
   }
 
   Future<void> _openProductDialog(
@@ -593,11 +677,13 @@ class _CategoryHeader extends StatelessWidget {
 class _ShoppingRow extends StatelessWidget {
   const _ShoppingRow({
     required this.item,
+    required this.category,
     required this.shopMode,
     required this.onEdit,
   });
 
   final ShoppingItem item;
+  final String category;
   final bool shopMode;
   final VoidCallback onEdit;
 
@@ -605,7 +691,6 @@ class _ShoppingRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = AppScope.of(context);
     final scheme = Theme.of(context).colorScheme;
-    final category = categoryForProduct(item.name);
     final favorite = appState.isFavoriteProduct(item.name, item.unit);
     final textStyle = item.isPurchased
         ? TextStyle(

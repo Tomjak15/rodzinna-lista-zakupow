@@ -6,6 +6,10 @@ void main() {
     expect(categoryForProduct('chleb zytni'), 'Pieczywo');
     expect(categoryForProduct('pierś z kurczaka'), 'Mięso i wędliny');
     expect(categoryForProduct('marchew'), 'Warzywa');
+    expect(categoryForProduct('płatki kukurydziane'), 'Sypkie i makarony');
+    expect(categoryForProduct('mąka kukurydziana'), 'Sypkie i makarony');
+    expect(categoryForProduct('chrupki kukurydziane'), 'Słodycze i przekąski');
+    expect(categoryForProduct('kukurydza w puszce'), 'Warzywa');
     expect(categoryForProduct('losowy produkt'), 'Inne');
   });
 }

@@ -292,6 +292,10 @@ async function handleRequest(request, env) {
     return scanReceipt(request, env);
   }
 
+  if (request.method === "POST" && path === "/api/ai/product-category") {
+    return classifyProductCategory(request, env);
+  }
+
   const collectionMatch = path.match(/^\/api\/([^/]+)$/);
   if (request.method === "GET" && collectionMatch) {
     return listRows(env, collectionMatch[1], url.searchParams);
@@ -399,6 +403,65 @@ async function scanReceipt(request, env) {
     return json({ storeName: "Sklep", total: 0, items: [] });
   }
   return json(result);
+}
+
+async function classifyProductCategory(request, env) {
+  const body = await request.json();
+  const name = cleanText(body?.name);
+  if (!name) {
+    throw new ApiError("Brakuje nazwy produktu.", 400);
+  }
+
+  const allowed = productCategoryNames();
+  const fallback = localProductCategory(name);
+  if (!env.AI) {
+    return json({ category: fallback, source: "local" });
+  }
+
+  const familyHints = await loadFamilyScanHints(env, body?.familyId, {
+    includeRecipeIngredients: false,
+    includeReceipts: true,
+  });
+  const bodyHints = Array.isArray(body?.hints)
+    ? body.hints.map(cleanText).filter(Boolean)
+    : [];
+  const hints = normalizeScanHints([...bodyHints, ...familyHints]).slice(0, 120);
+
+  try {
+    const outputText = await runWorkersAiTextJson({
+      workersAi: env.AI,
+      model: defaultWorkersAiTextModel,
+      schema: productCategoryJsonSchema(),
+      system:
+        "Jestes klasyfikatorem polskich produktow na liscie zakupow. Odpowiadasz tylko poprawnym JSON.",
+      prompt: [
+        "Wybierz najlepsza kategorie dla produktu.",
+        `Dozwolone kategorie: ${allowed.join(", ")}.`,
+        "Nie klasyfikuj produktu po jednym mylacym slowie, jesli cala nazwa mowi cos innego.",
+        "Przyklady:",
+        "- platki kukurydziane -> Sypkie i makarony",
+        "- maka kukurydziana -> Sypkie i makarony",
+        "- chrupki kukurydziane -> Slodycze i przekaski",
+        "- kukurydza w puszce -> Warzywa",
+        "- papier toaletowy -> Chemia i dom",
+        "- losowy gadzet -> Inne",
+        hints.length ? `Znane produkty rodziny:\n${hints.join(", ")}` : "",
+        `Produkt: ${name}`,
+        'Zwroc tylko JSON w formacie: {"category":"Inne"}',
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    });
+    const parsed = parseAiJsonObject(outputText);
+    const category = normalizeProductCategoryName(parsed?.category);
+    if (allowed.includes(category)) {
+      return json({ category, source: "ai" });
+    }
+  } catch (error) {
+    console.warn("Workers AI product category failed:", error.message);
+  }
+
+  return json({ category: fallback, source: "local" });
 }
 
 async function upsertLastWriteWins(env, table, item) {
@@ -2273,6 +2336,234 @@ function allowedRecipeCategories() {
     "Kaja",
     "Maciej",
     "Tomek",
+  ];
+}
+
+function productCategoryNames() {
+  return [
+    "Pieczywo",
+    "Nabiał i jajka",
+    "Mięso i wędliny",
+    "Ryby",
+    "Sypkie i makarony",
+    "Warzywa",
+    "Owoce",
+    "Przyprawy i sosy",
+    "Słodycze i przekąski",
+    "Napoje",
+    "Mrożonki",
+    "Chemia i dom",
+    "Zwierzęta",
+    "Inne",
+  ];
+}
+
+function productCategoryJsonSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["category"],
+    properties: {
+      category: { type: "string", enum: productCategoryNames() },
+    },
+  };
+}
+
+function normalizeProductCategoryName(value) {
+  const normalized = normalizeHintSearch(cleanText(value));
+  return (
+    productCategoryNames().find(
+      (category) => normalizeHintSearch(category) === normalized,
+    ) || ""
+  );
+}
+
+function localProductCategory(name) {
+  const cleanName = normalizeHintSearch(name);
+  if (!cleanName) {
+    return "Inne";
+  }
+
+  let bestCategory = "Inne";
+  let bestScore = 0;
+  for (const category of productCategoryDefinitions()) {
+    for (const keyword of category.keywords) {
+      const cleanKeyword = normalizeHintSearch(keyword);
+      if (!cleanKeyword || !containsProductKeyword(cleanName, cleanKeyword)) {
+        continue;
+      }
+      const words = cleanKeyword.split(" ").filter(Boolean).length;
+      const score = cleanKeyword.length * 4 + words * 24 + category.priority;
+      if (score > bestScore) {
+        bestCategory = category.name;
+        bestScore = score;
+      }
+    }
+  }
+  return bestCategory;
+}
+
+function containsProductKeyword(cleanName, cleanKeyword) {
+  if (cleanKeyword.includes(" ")) {
+    return ` ${cleanName} `.includes(` ${cleanKeyword} `);
+  }
+  const tokens = cleanName.split(" ");
+  if (cleanKeyword.length <= 3) {
+    return tokens.includes(cleanKeyword);
+  }
+  return tokens.some(
+    (token) => token === cleanKeyword || token.startsWith(cleanKeyword),
+  );
+}
+
+function productCategoryDefinitions() {
+  return [
+    {
+      name: "Pieczywo",
+      priority: 8,
+      keywords: [
+        "chleb",
+        "chleb kukurydziany",
+        "bułka",
+        "kajzerka",
+        "bagietka",
+        "rogale",
+        "tortilla",
+        "pita",
+        "ciabatta",
+      ],
+    },
+    {
+      name: "Nabiał i jajka",
+      priority: 8,
+      keywords: [
+        "mleko",
+        "masło",
+        "śmietana",
+        "jogurt",
+        "kefir",
+        "twaróg",
+        "serek",
+        "ser",
+        "mozzarella",
+        "feta",
+        "jajka",
+      ],
+    },
+    {
+      name: "Mięso i wędliny",
+      priority: 8,
+      keywords: [
+        "kurczak",
+        "indyk",
+        "wołowina",
+        "wieprzowina",
+        "schab",
+        "karkówka",
+        "mięso",
+        "mielone",
+        "szynka",
+        "kiełbasa",
+        "parówki",
+        "boczek",
+        "salami",
+      ],
+    },
+    {
+      name: "Ryby",
+      priority: 8,
+      keywords: ["ryba", "łosoś", "dorsz", "tuńczyk", "makrela", "śledzie", "krewetki"],
+    },
+    {
+      name: "Sypkie i makarony",
+      priority: 14,
+      keywords: [
+        "płatki kukurydziane",
+        "płatki śniadaniowe",
+        "płatki owsiane",
+        "corn flakes",
+        "owsianka",
+        "musli",
+        "granola",
+        "ryż",
+        "makaron",
+        "kasza",
+        "kasza kukurydziana",
+        "kuskus",
+        "mąka",
+        "mąka kukurydziana",
+        "cukier",
+        "sól",
+        "bułka tarta",
+        "drożdże",
+      ],
+    },
+    {
+      name: "Warzywa",
+      priority: 6,
+      keywords: [
+        "ziemniak",
+        "marchew",
+        "pietruszka",
+        "seler",
+        "por",
+        "cebula",
+        "czosnek",
+        "pomidor",
+        "ogórek",
+        "papryka świeża",
+        "sałata",
+        "szpinak",
+        "kapusta",
+        "brokuł",
+        "kalafior",
+        "cukinia",
+        "pieczarki",
+        "fasolka",
+        "groszek",
+        "kukurydza",
+        "kukurydza w puszce",
+        "fasola",
+        "ciecierzyca",
+        "soczewica",
+        "burak",
+      ],
+    },
+    {
+      name: "Owoce",
+      priority: 6,
+      keywords: ["jabłko", "banan", "pomarańcza", "cytryna", "gruszka", "winogrona", "truskawki", "maliny", "kiwi", "mango"],
+    },
+    {
+      name: "Przyprawy i sosy",
+      priority: 10,
+      keywords: ["olej", "olej kukurydziany", "oliwa", "ocet", "majonez", "ketchup", "musztarda", "sos", "passata", "koncentrat", "pesto", "przyprawa", "pieprz", "curry", "bulion"],
+    },
+    {
+      name: "Słodycze i przekąski",
+      priority: 12,
+      keywords: ["chrupki kukurydziane", "paluszki kukurydziane", "nachosy", "popcorn", "czekolada", "baton", "ciastka", "chipsy", "paluszki", "krakersy", "orzechy", "lody", "budyń", "kisiel", "galaretka"],
+    },
+    {
+      name: "Napoje",
+      priority: 8,
+      keywords: ["woda", "sok", "napój", "cola", "pepsi", "lemoniada", "syrop", "kawa", "herbata", "energetyk"],
+    },
+    {
+      name: "Mrożonki",
+      priority: 9,
+      keywords: ["mrożone", "mrożonka", "frytki", "pizza mrożona", "pierogi", "kopytka", "warzywa mrożone"],
+    },
+    {
+      name: "Chemia i dom",
+      priority: 8,
+      keywords: ["papier toaletowy", "ręcznik papierowy", "chusteczki", "mydło", "szampon", "pasta do zębów", "płyn do naczyń", "tabletki do zmywarki", "proszek do prania", "worki na śmieci", "folia aluminiowa"],
+    },
+    {
+      name: "Zwierzęta",
+      priority: 8,
+      keywords: ["karma dla psa", "karma dla kota", "karma", "żwirek"],
+    },
   ];
 }
 
