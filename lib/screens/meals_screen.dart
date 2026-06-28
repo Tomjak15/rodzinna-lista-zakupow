@@ -70,7 +70,13 @@ class _MealsScreenState extends State<MealsScreen> {
           const SizedBox(height: 12),
           FloatingActionButton.extended(
             heroTag: 'add-recipe',
-            onPressed: () => _openMealDialog(context),
+            onPressed: () async {
+              final savedMeal = await _openMealDialog(context);
+              if (!mounted || savedMeal == null) {
+                return;
+              }
+              _showSavedRecipe(savedMeal);
+            },
             icon: const Icon(Icons.add),
             label: const Text('Dodaj przepis'),
           ),
@@ -140,10 +146,13 @@ class _MealsScreenState extends State<MealsScreen> {
         if (!context.mounted) {
           return;
         }
-        await _openMealDialog(
+        final savedMeal = await _openMealDialog(
           context,
           initialDraft: _RecipeDraft.fromScan(scanDraft),
         );
+        if (savedMeal != null && mounted) {
+          _showSavedRecipe(savedMeal);
+        }
       } finally {
         service.dispose();
       }
@@ -170,6 +179,15 @@ class _MealsScreenState extends State<MealsScreen> {
         setState(() => _aiScanning = false);
       }
     }
+  }
+
+  void _showSavedRecipe(Meal meal) {
+    if (_selectedCategory != 'Wszystkie') {
+      setState(() => _selectedCategory = 'Wszystkie');
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Zapisano przepis: ${meal.name}')),
+    );
   }
 }
 
@@ -1210,19 +1228,19 @@ class _AddToShoppingDialogState extends State<_AddToShoppingDialog> {
   }
 }
 
-Future<void> _openMealDialog(
+Future<Meal?> _openMealDialog(
   BuildContext context, {
   _RecipeDraft? initialDraft,
 }) async {
   final draft = await showDialog<_RecipeDraft>(
     context: context,
     builder: (_) =>
-        _RecipeDialog(title: 'Nowy obiad', initialDraft: initialDraft),
+        _RecipeDialog(title: 'Nowy przepis', initialDraft: initialDraft),
   );
   if (draft == null || !context.mounted) {
-    return;
+    return null;
   }
-  await AppScope.of(context).addMealWithRecipe(
+  return AppScope.of(context).addMealWithRecipe(
     mealName: draft.name,
     category: draft.category,
     instructions: draft.instructions,

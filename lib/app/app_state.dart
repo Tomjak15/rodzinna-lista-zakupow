@@ -639,7 +639,7 @@ class AppState extends ChangeNotifier {
     return addedCount;
   }
 
-  Future<void> addMealWithRecipe({
+  Future<Meal?> addMealWithRecipe({
     required String mealName,
     String category = defaultRecipeCategory,
     required String instructions,
@@ -653,7 +653,7 @@ class AppState extends ChangeNotifier {
     final family = _data.family;
     final member = _data.currentMember;
     if (family == null || member == null) {
-      return;
+      return null;
     }
     final now = DateTime.now().toUtc();
     final mealId = _uuid.v4();
@@ -696,6 +696,7 @@ class AppState extends ChangeNotifier {
       ],
     );
     await _persist(scheduleSync: true);
+    return meal;
   }
 
   Future<void> addSubRecipe({
