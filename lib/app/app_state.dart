@@ -558,7 +558,7 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  Future<void> addReceipt({
+  Future<Receipt?> addReceipt({
     required String storeName,
     required DateTime purchasedAt,
     required double total,
@@ -570,7 +570,7 @@ class AppState extends ChangeNotifier {
     final family = _data.family;
     final member = _data.currentMember;
     if (family == null || member == null) {
-      return;
+      return null;
     }
     final now = DateTime.now().toUtc();
     final receipt = Receipt(
@@ -591,6 +591,7 @@ class AppState extends ChangeNotifier {
     );
     _data = _data.copyWith(receipts: [..._data.receipts, receipt]);
     await _persist(scheduleSync: true);
+    return receipt;
   }
 
   Future<void> deleteReceipt(Receipt receipt) async {

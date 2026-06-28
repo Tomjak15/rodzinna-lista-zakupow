@@ -38,7 +38,7 @@ void main() {
     addTearDown(appState.dispose);
 
     await appState.createFamily(familyName: 'Dom', memberName: 'Tomek');
-    await appState.addReceipt(
+    final receipt = await appState.addReceipt(
       storeName: 'Sklep',
       purchasedAt: DateTime(2026, 6, 20, 12),
       total: 9.99,
@@ -49,6 +49,8 @@ void main() {
       ],
     );
 
+    expect(receipt?.storeName, 'Sklep');
+    expect(receipt?.total, 9.99);
     expect(appState.data.activeReceipts, hasLength(1));
     expect(appState.data.activeReceipts.single.rawText, isEmpty);
     expect(appState.data.activeReceipts.single.imageData, 'abc123');

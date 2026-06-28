@@ -20,6 +20,13 @@ class ReceiptsScreen extends StatefulWidget {
 
 class _ReceiptsScreenState extends State<ReceiptsScreen> {
   bool _scanning = false;
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,13 +36,20 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
 
     return Scaffold(
       body: ListView(
+        controller: _scrollController,
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
         children: [
           _ReceiptActions(
             scanning: _scanning,
             scannerSupported: receiptCameraScannerSupported,
             onScan: _scanReceipt,
-            onManualAdd: () => _openReceiptEditor(context),
+            onManualAdd: () async {
+              final savedReceipt = await _openReceiptEditor(context);
+              if (!mounted || savedReceipt == null) {
+                return;
+              }
+              _showSavedReceipt(savedReceipt);
+            },
           ),
           const SizedBox(height: 12),
           if (receipts.isEmpty)
@@ -56,7 +70,13 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
               label: const Text('Skanuj'),
             )
           : FloatingActionButton.extended(
-              onPressed: () => _openReceiptEditor(context),
+              onPressed: () async {
+                final savedReceipt = await _openReceiptEditor(context);
+                if (!mounted || savedReceipt == null) {
+                  return;
+                }
+                _showSavedReceipt(savedReceipt);
+              },
               icon: const Icon(Icons.add),
               label: const Text('Dodaj'),
             ),
@@ -117,7 +137,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
       if (!mounted) {
         return;
       }
-      await _openReceiptEditor(
+      final savedReceipt = await _openReceiptEditor(
         context,
         initialStoreName: parsed.storeName,
         initialItems: parsed.items,
@@ -126,6 +146,9 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
         imageMimeType: result.imageMimeType,
         scanNotice: scanNotice,
       );
+      if (savedReceipt != null && mounted) {
+        _showSavedReceipt(savedReceipt);
+      }
     } on ReceiptScanException catch (error) {
       if (!mounted) {
         return;
@@ -140,7 +163,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
     }
   }
 
-  Future<void> _openReceiptEditor(
+  Future<Receipt?> _openReceiptEditor(
     BuildContext context, {
     String? initialStoreName,
     List<ReceiptItem> initialItems = const [],
@@ -149,7 +172,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
     String? imageMimeType,
     String? scanNotice,
   }) async {
-    await showModalBottomSheet<void>(
+    return showModalBottomSheet<Receipt>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -160,6 +183,23 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
         imageData: imageData,
         imageMimeType: imageMimeType,
         scanNotice: scanNotice,
+      ),
+    );
+  }
+
+  void _showSavedReceipt(Receipt receipt) {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOut,
+      );
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Zapisano paragon: ${receipt.storeName} - ${_formatMoney(receipt.total)}',
+        ),
       ),
     );
   }
@@ -634,7 +674,7 @@ class _ReceiptEditorSheetState extends State<_ReceiptEditorSheet> {
         .map((line) => line.toItem())
         .whereType<ReceiptItem>()
         .toList();
-    await AppScope.of(context).addReceipt(
+    final savedReceipt = await AppScope.of(context).addReceipt(
       storeName: _storeController.text,
       purchasedAt: DateTime.now(),
       total: _parseMoney(_totalController.text),
@@ -644,7 +684,7 @@ class _ReceiptEditorSheetState extends State<_ReceiptEditorSheet> {
       imageMimeType: widget.imageMimeType,
     );
     if (mounted) {
-      Navigator.pop(context);
+      Navigator.pop(context, savedReceipt);
     }
   }
 
