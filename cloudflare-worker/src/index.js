@@ -1,7 +1,7 @@
 const schemaVersion = 6;
 const defaultWorkersAiTextModel = "@cf/mistralai/mistral-small-3.1-24b-instruct";
-const defaultWorkersAiVisionModel = "@cf/llava-hf/llava-1.5-7b-hf";
-const fallbackWorkersAiVisionModel = "";
+const defaultWorkersAiVisionModel = "@cf/meta/llama-3.2-11b-vision-instruct";
+const fallbackWorkersAiVisionModel = "@cf/llava-hf/llava-1.5-7b-hf";
 
 const tables = {
   families: {
@@ -368,6 +368,7 @@ async function upsertRow(env, tableName, id, request) {
 async function scanRecipe(request, env) {
   const body = await request.json();
   const result = await scanRecipeFromRequest({
+    env,
     body,
     apiKey: env.OPENAI_API_KEY,
     model: env.OPENAI_RECIPE_MODEL || "gpt-4.1-mini",
@@ -381,6 +382,7 @@ async function scanRecipe(request, env) {
 async function scanReceipt(request, env) {
   const body = await request.json();
   const result = await scanReceiptFromRequest({
+    env,
     body,
     apiKey: env.OPENAI_API_KEY,
     model: env.OPENAI_RECEIPT_MODEL || "gpt-4.1-mini",
@@ -552,6 +554,7 @@ function boolToInt(value) {
 }
 
 async function scanReceiptFromRequest({
+  env,
   body,
   apiKey,
   model,
@@ -561,7 +564,7 @@ async function scanReceiptFromRequest({
   const text = cleanText(body?.text);
   const imageData = cleanText(body?.imageData);
   const imageMimeType = cleanText(body?.imageMimeType) || "image/jpeg";
-  const hints = normalizeScanHints(body?.hints);
+  const hints = await buildReceiptScanHints(env, body);
 
   if (!text && !imageData) {
     throw new ApiError("Dodaj zdjęcie albo tekst paragonu.", 400);
@@ -594,7 +597,7 @@ async function scanReceiptFromRequest({
   const textFallback = text
     ? normalizeReceiptScanDraft(parseReceiptTextFallback(text), hints)
     : null;
-  if (textFallback && isReceiptScanUseful(textFallback)) {
+  if (textFallback && isReceiptScanUseful(textFallback) && !workersAi) {
     return textFallback;
   }
 
@@ -609,7 +612,7 @@ async function scanReceiptFromRequest({
         hints,
       );
       if (isReceiptScanUseful(aiTextResult)) {
-        return aiTextResult;
+        return betterReceiptScan(aiTextResult, textFallback);
       }
     } catch (error) {
       console.warn(
@@ -677,6 +680,7 @@ async function scanReceiptWithOpenAi({
       type: "input_text",
       text: [
         "Jesli OCR jest podobny do produktu ze slownika, uzyj nazwy ze slownika. Slownik jest podpowiedzia, nie lista zamknieta.",
+        receiptRulesPrompt(),
         receiptExamplesPrompt(),
         hintsText,
         "Odczytaj polski paragon ze zdjęcia lub tekstu OCR.",
@@ -745,6 +749,7 @@ async function scanReceiptTextWithWorkersAi({ workersAi, text, hints }) {
       "Pomin NIP, numer paragonu, VAT, platnosc, kody, losowe numery i reklamy.",
       "Jesli produkt ma tylko cene, ustaw ilosc 1 i jednostke szt.",
       "Jesli nazwa wyglada jak produkt ze slownika, popraw ja do nazwy ze slownika.",
+      receiptRulesPrompt(),
       receiptExamplesPrompt(),
       hintsText,
       'Zwroc tylko JSON w formacie: {"storeName":"Sklep","total":0,"items":[{"name":"Produkt","quantity":1,"unit":"szt.","price":0}]}',
@@ -777,6 +782,7 @@ async function scanReceiptWithWorkersAi({
       "Dla produktow podaj nazwe, ilosc, jednostke i cene koncowa z paragonu.",
       "Jesli ilosci nie widac, ustaw 1 i jednostke szt.",
       "Jesli nazwa wyglada jak produkt ze slownika, popraw ja do nazwy ze slownika.",
+      receiptRulesPrompt(),
       receiptExamplesPrompt(),
       hintsText,
       'Zwroc tylko JSON w formacie: {"storeName":"Sklep","total":0,"items":[{"name":"Produkt","quantity":1,"unit":"szt.","price":0}]}',
@@ -789,6 +795,26 @@ async function scanReceiptWithWorkersAi({
 
 function isReceiptScanUseful(value) {
   return value.items.length > 0 && value.total > 0;
+}
+
+function betterReceiptScan(primary, fallback) {
+  if (!fallback) {
+    return primary;
+  }
+  return receiptScanScore(primary) >= receiptScanScore(fallback)
+    ? primary
+    : fallback;
+}
+
+function receiptScanScore(value) {
+  if (!value) {
+    return 0;
+  }
+  return (
+    value.items.length * 20 +
+    (value.total > 0 ? 10 : 0) +
+    (cleanText(value.storeName) && value.storeName !== "Sklep" ? 4 : 0)
+  );
 }
 
 function isReceiptScanCoherent(value) {
@@ -925,6 +951,7 @@ function normalizeReceiptScanDraft(value, hints = []) {
 }
 
 async function scanRecipeFromRequest({
+  env,
   body,
   apiKey,
   model,
@@ -934,7 +961,7 @@ async function scanRecipeFromRequest({
   const text = cleanText(body?.text);
   const imageData = cleanText(body?.imageData);
   const imageMimeType = cleanText(body?.imageMimeType) || "image/jpeg";
-  const hints = normalizeScanHints(body?.hints);
+  const hints = await buildRecipeScanHints(env, body);
 
   if (!text && !imageData) {
     throw new ApiError("Dodaj zdjęcie albo tekst przepisu.", 400);
@@ -962,7 +989,7 @@ async function scanRecipeFromRequest({
   }
 
   const textFallback = text ? tryParseRecipeTextFallback(text, hints) : null;
-  if (textFallback) {
+  if (textFallback && !workersAi) {
     return textFallback;
   }
 
@@ -982,6 +1009,10 @@ async function scanRecipeFromRequest({
         error.message,
       );
     }
+  }
+
+  if (textFallback) {
+    return textFallback;
   }
 
   if (imageData && workersAi) {
@@ -1035,6 +1066,7 @@ async function scanRecipeWithOpenAi({
       type: "input_text",
       text: [
         "Jesli OCR jest podobny do skladnika ze slownika, uzyj nazwy ze slownika. Slownik jest podpowiedzia, nie lista zamknieta.",
+        recipeRulesPrompt(),
         recipeExamplesPrompt(),
         hintsText,
         "Odczytaj polski przepis kulinarny ze zdjęcia lub tekstu.",
@@ -1105,6 +1137,7 @@ async function scanRecipeTextWithWorkersAi({ workersAi, text, hints }) {
       "Jesli kcal, bialka, tluszczu albo weglowodanow nie ma, ustaw 0.",
       "Skladniki zapisz jako nazwa, ilosc i jednostka. Nie dodawaj skladnikow, ktorych nie ma w tekscie.",
       "Jesli nazwa wyglada jak skladnik ze slownika, popraw ja do nazwy ze slownika.",
+      recipeRulesPrompt(),
       recipeExamplesPrompt(),
       hintsText,
       'Zwroc tylko JSON w formacie: {"name":"Nazwa","category":"Obiady","instructions":"Opis","baseServings":4,"caloriesPerServing":0,"proteinPerServing":0,"fatPerServing":0,"carbsPerServing":0,"ingredients":[{"name":"Produkt","quantity":1,"unit":"szt."}]}',
@@ -1137,6 +1170,7 @@ async function scanRecipeWithWorkersAi({
       "Jesli kcal, bialka, tluszczu albo weglowodanow nie ma, ustaw 0.",
       "Skladniki zapisz jako nazwa, ilosc i jednostka. Nie dodawaj skladnikow, ktorych nie widac.",
       "Jesli nazwa wyglada jak skladnik ze slownika, popraw ja do nazwy ze slownika.",
+      recipeRulesPrompt(),
       recipeExamplesPrompt(),
       hintsText,
       'Zwroc tylko JSON w formacie: {"name":"Nazwa","category":"Obiady","instructions":"Opis","baseServings":4,"caloriesPerServing":0,"proteinPerServing":0,"fatPerServing":0,"carbsPerServing":0,"ingredients":[{"name":"Produkt","quantity":1,"unit":"szt."}]}',
@@ -1206,6 +1240,85 @@ function extractOpenAiOutputText(payload) {
   return "";
 }
 
+async function buildReceiptScanHints(env, body) {
+  const familyHints = await loadFamilyScanHints(env, cleanText(body?.familyId), {
+    includeRecipes: true,
+    includeReceipts: true,
+  });
+  return normalizeScanHints([
+    ...familyHints,
+    ...(Array.isArray(body?.hints) ? body.hints : []),
+    ...baseProductVocabulary(),
+    ...receiptOcrVocabulary(),
+  ]);
+}
+
+async function buildRecipeScanHints(env, body) {
+  const familyHints = await loadFamilyScanHints(env, cleanText(body?.familyId), {
+    includeRecipes: true,
+    includeReceipts: false,
+  });
+  return normalizeScanHints([
+    ...familyHints,
+    ...(Array.isArray(body?.hints) ? body.hints : []),
+    ...baseProductVocabulary(),
+    ...baseRecipeVocabulary(),
+  ]);
+}
+
+async function loadFamilyScanHints(env, familyId, options) {
+  if (!env?.DB || !familyId) {
+    return [];
+  }
+
+  const hints = [];
+  const nameQueries = [
+    "select name from shopping_items where family_id = ? and is_deleted = 0 order by updated_at desc limit 120",
+    "select name from favorite_products where family_id = ? and is_deleted = 0 order by updated_at desc limit 120",
+  ];
+  if (options.includeRecipes) {
+    nameQueries.push(
+      "select name from recipe_ingredients where family_id = ? and is_deleted = 0 order by updated_at desc limit 180",
+    );
+  }
+
+  try {
+    for (const sql of nameQueries) {
+      const { results } = await env.DB.prepare(sql).bind(familyId).all();
+      for (const row of results || []) {
+        hints.push(row.name);
+      }
+    }
+
+    if (options.includeReceipts) {
+      const { results } = await env.DB.prepare(
+        "select items_json from receipts where family_id = ? and is_deleted = 0 order by updated_at desc limit 80",
+      )
+        .bind(familyId)
+        .all();
+      for (const row of results || []) {
+        hints.push(...receiptItemNamesFromJson(row.items_json));
+      }
+    }
+  } catch (error) {
+    console.warn("Family scan hints failed:", error.message);
+  }
+
+  return hints;
+}
+
+function receiptItemNamesFromJson(value) {
+  try {
+    const items = typeof value === "string" ? JSON.parse(value) : value;
+    if (!Array.isArray(items)) {
+      return [];
+    }
+    return items.map((item) => item?.name).filter(Boolean);
+  } catch (_) {
+    return [];
+  }
+}
+
 function normalizeScanHints(value) {
   if (!Array.isArray(value)) {
     return [];
@@ -1249,6 +1362,17 @@ function receiptExamplesPrompt() {
   ].join("\n");
 }
 
+function receiptRulesPrompt() {
+  return [
+    "Zasady paragonu:",
+    "- Cena produktu zwykle stoi na koncu linii; suma/razem/do zaplaty to total, nie produkt.",
+    "- Nie zapisuj jako produkty: NIP, numer paragonu, kasa, kasjer, terminal, VAT, rabat, platnosc, reszta, adres.",
+    "- Jezeli OCR sklei slowa, rozdziel je wedlug slownika, np. CHLEBPSZENNY -> Chleb pszenny.",
+    "- Jezeli linia ma kod lub litere VAT przy produkcie, usun kod i litere, zostaw produkt.",
+    "- Jezeli cena nie pasuje do produktu albo wyglada jak numer dokumentu, pomin produkt.",
+  ].join("\n");
+}
+
 function recipeExamplesPrompt() {
   return [
     "Przyklady przepisu:",
@@ -1256,6 +1380,191 @@ function recipeExamplesPrompt() {
     "OCR: makaron 200g => name=Makaron, quantity=200, unit=g",
     "OCR: 2 lyzki jogurtu => name=Jogurt, quantity=2, unit=lyzka",
   ].join("\n");
+}
+
+function recipeRulesPrompt() {
+  return [
+    "Zasady przepisu:",
+    "- Składniki bierz tylko z tekstu/zdjecia, ale poprawiaj ich nazwy wedlug slownika.",
+    "- Instrukcja przygotowania ma trafic do instructions, nie do skladnikow.",
+    "- Porcje wykryj z tekstu; gdy ich nie ma, ustaw 4.",
+    "- Makro ustaw tylko gdy jest podane w tekscie; gdy go nie ma, wpisz 0.",
+    "- Jednostki normalizuj: lyzki/łyżki -> łyżka, lyzeczki -> łyżeczka, zabki -> ząbek, garsc -> garść.",
+  ].join("\n");
+}
+
+function baseProductVocabulary() {
+  return [
+    "Chleb",
+    "Chleb pszenny",
+    "Chleb żytni",
+    "Bułki",
+    "Bagietka",
+    "Tortilla",
+    "Mleko",
+    "Masło",
+    "Margaryna",
+    "Śmietana",
+    "Śmietanka 30%",
+    "Jogurt naturalny",
+    "Jogurt owocowy",
+    "Kefir",
+    "Maślanka",
+    "Twaróg",
+    "Serek wiejski",
+    "Ser żółty",
+    "Mozzarella",
+    "Feta",
+    "Jajka",
+    "Szynka",
+    "Kiełbasa",
+    "Parówki",
+    "Boczek",
+    "Kurczak",
+    "Pierś z kurczaka",
+    "Udka z kurczaka",
+    "Indyk",
+    "Wołowina",
+    "Wieprzowina",
+    "Schab",
+    "Karkówka",
+    "Mięso mielone",
+    "Łosoś",
+    "Dorsz",
+    "Tuńczyk",
+    "Ziemniaki",
+    "Marchew",
+    "Pietruszka",
+    "Seler",
+    "Por",
+    "Cebula",
+    "Czosnek",
+    "Pomidory",
+    "Ogórek",
+    "Ogórki kiszone",
+    "Papryka",
+    "Sałata",
+    "Rukola",
+    "Szpinak",
+    "Kapusta",
+    "Brokuł",
+    "Kalafior",
+    "Cukinia",
+    "Pieczarki",
+    "Groszek",
+    "Kukurydza",
+    "Fasola",
+    "Ciecierzyca",
+    "Soczewica",
+    "Buraki",
+    "Koperek",
+    "Natka pietruszki",
+    "Jabłka",
+    "Banany",
+    "Pomarańcze",
+    "Cytryny",
+    "Truskawki",
+    "Borówki",
+    "Ryż",
+    "Makaron",
+    "Kasza gryczana",
+    "Kasza jęczmienna",
+    "Kasza jaglana",
+    "Kuskus",
+    "Płatki owsiane",
+    "Mąka pszenna",
+    "Mąka ziemniaczana",
+    "Cukier",
+    "Sól",
+    "Proszek do pieczenia",
+    "Drożdże",
+    "Bułka tarta",
+    "Olej",
+    "Oliwa",
+    "Ocet",
+    "Majonez",
+    "Ketchup",
+    "Musztarda",
+    "Sos sojowy",
+    "Passata",
+    "Koncentrat pomidorowy",
+    "Pesto",
+    "Dżem",
+    "Miód",
+    "Kakao",
+    "Czekolada",
+    "Kawa",
+    "Herbata",
+    "Woda",
+    "Sok",
+    "Mrożona pizza",
+    "Frytki",
+    "Pierogi",
+    "Warzywa mrożone",
+    "Lody",
+    "Papryka słodka",
+    "Papryka ostra",
+    "Pieprz",
+    "Curry",
+    "Kurkuma",
+    "Oregano",
+    "Bazylia",
+    "Tymianek",
+    "Rozmaryn",
+    "Cynamon",
+    "Imbir",
+    "Rosół kostki",
+    "Bulion",
+    "Tofu",
+    "Hummus",
+    "Papier toaletowy",
+    "Ręcznik papierowy",
+    "Mydło",
+    "Szampon",
+    "Płyn do naczyń",
+    "Proszek do prania",
+  ];
+}
+
+function baseRecipeVocabulary() {
+  return [
+    "bazylia",
+    "bulion",
+    "cebula",
+    "czosnek",
+    "jogurt",
+    "makaron",
+    "marchew",
+    "mąka",
+    "mleko",
+    "olej",
+    "oliwa",
+    "papryka",
+    "pieprz",
+    "pomidory",
+    "ryż",
+    "ser",
+    "sól",
+    "śmietana",
+    "ziemniaki",
+  ];
+}
+
+function receiptOcrVocabulary() {
+  return [
+    "Biedronka",
+    "Lidl",
+    "Dino",
+    "Kaufland",
+    "Auchan",
+    "Carrefour",
+    "Aldi",
+    "Żabka",
+    "Netto",
+    "Stokrotka",
+    "Rossmann",
+    "Hebe",
+  ];
 }
 
 function applyHintsToReceiptScan(value, hints) {

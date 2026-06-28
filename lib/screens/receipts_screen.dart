@@ -86,6 +86,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
             imageData: result.imageData,
             imageMimeType: result.imageMimeType,
             hints: buildProductScanHints(appState.data),
+            familyId: appState.data.family?.id,
           );
           if (_receiptParseScore(localParsed) >
               _receiptParseScore(serverParsed)) {

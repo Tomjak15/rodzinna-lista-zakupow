@@ -113,6 +113,7 @@ class _MealsScreenState extends State<MealsScreen> {
             imageData: imageScan?.imageData,
             imageMimeType: imageScan?.imageMimeType,
             hints: buildIngredientScanHints(appState.data),
+            familyId: appState.data.family?.id,
           );
         } on RecipeAiException {
           final recognizedText = imageScan?.text.trim() ?? '';
@@ -133,6 +134,7 @@ class _MealsScreenState extends State<MealsScreen> {
           scanDraft = await service.scanRecipe(
             text: correctedText,
             hints: buildIngredientScanHints(appState.data),
+            familyId: appState.data.family?.id,
           );
         }
         if (!context.mounted) {

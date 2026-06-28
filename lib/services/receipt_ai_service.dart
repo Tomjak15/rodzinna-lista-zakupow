@@ -19,6 +19,7 @@ class ReceiptAiService {
     String? imageData,
     String? imageMimeType,
     List<String> hints = const [],
+    String? familyId,
   }) async {
     final response = await _client
         .post(
@@ -29,9 +30,10 @@ class ReceiptAiService {
             'imageData': imageData,
             'imageMimeType': imageMimeType,
             'hints': hints,
+            'familyId': familyId?.trim() ?? '',
           }),
         )
-        .timeout(const Duration(seconds: 60));
+        .timeout(const Duration(seconds: 90));
 
     final decoded = jsonDecode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
