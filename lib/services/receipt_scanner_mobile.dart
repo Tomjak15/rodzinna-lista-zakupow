@@ -28,7 +28,17 @@ class ReceiptScanException implements Exception {
 bool get receiptCameraScannerSupported => Platform.isAndroid || Platform.isIOS;
 
 Future<ReceiptScanResult?> scanReceiptFromCamera() async {
-  if (!receiptCameraScannerSupported) {
+  return _scanReceipt(source: ImageSource.camera);
+}
+
+bool get receiptGalleryScannerSupported => Platform.isAndroid || Platform.isIOS;
+
+Future<ReceiptScanResult?> scanReceiptFromGallery() async {
+  return _scanReceipt(source: ImageSource.gallery);
+}
+
+Future<ReceiptScanResult?> _scanReceipt({required ImageSource source}) async {
+  if (!receiptCameraScannerSupported && !receiptGalleryScannerSupported) {
     throw const ReceiptScanException(
       'Skaner aparatem działa w aplikacji Android/iOS.',
     );
@@ -36,9 +46,9 @@ Future<ReceiptScanResult?> scanReceiptFromCamera() async {
 
   final picker = ImagePicker();
   final image = await picker.pickImage(
-    source: ImageSource.camera,
-    imageQuality: 100,
-    maxWidth: 4096,
+    source: source,
+    imageQuality: 90,
+    maxWidth: 2048,
   );
   if (image == null) {
     return null;

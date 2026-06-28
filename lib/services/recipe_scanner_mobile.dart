@@ -28,7 +28,19 @@ class RecipeScanException implements Exception {
 bool get recipeCameraScannerSupported => Platform.isAndroid || Platform.isIOS;
 
 Future<RecipeImageScanResult?> scanRecipeFromCamera() async {
-  if (!recipeCameraScannerSupported) {
+  return _scanRecipe(source: ImageSource.camera);
+}
+
+bool get recipeGalleryScannerSupported => Platform.isAndroid || Platform.isIOS;
+
+Future<RecipeImageScanResult?> scanRecipeFromGallery() async {
+  return _scanRecipe(source: ImageSource.gallery);
+}
+
+Future<RecipeImageScanResult?> _scanRecipe({
+  required ImageSource source,
+}) async {
+  if (!recipeCameraScannerSupported && !recipeGalleryScannerSupported) {
     throw const RecipeScanException(
       'Skaner aparatem działa w aplikacji Android/iOS.',
     );
@@ -36,9 +48,9 @@ Future<RecipeImageScanResult?> scanRecipeFromCamera() async {
 
   final picker = ImagePicker();
   final image = await picker.pickImage(
-    source: ImageSource.camera,
-    imageQuality: 100,
-    maxWidth: 4096,
+    source: source,
+    imageQuality: 90,
+    maxWidth: 2048,
   );
   if (image == null) {
     return null;

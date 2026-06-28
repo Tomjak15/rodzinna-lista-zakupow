@@ -58,7 +58,9 @@ class _MealsScreenState extends State<MealsScreen> {
         children: [
           FloatingActionButton.extended(
             heroTag: 'scan-recipe-ai',
-            onPressed: _aiScanning ? null : () => _scanRecipeWithAi(context),
+            onPressed: _aiScanning
+                ? null
+                : () => _scanRecipeWithAi(context, fromGallery: false),
             icon: _aiScanning
                 ? const SizedBox.square(
                     dimension: 18,
@@ -66,6 +68,15 @@ class _MealsScreenState extends State<MealsScreen> {
                   )
                 : const Icon(Icons.document_scanner_outlined),
             label: const Text('Skanuj AI'),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'scan-recipe-ai-gallery',
+            onPressed: _aiScanning
+                ? null
+                : () => _scanRecipeWithAi(context, fromGallery: true),
+            icon: const Icon(Icons.photo_library_outlined),
+            label: const Text('AI z galerii'),
           ),
           const SizedBox(height: 12),
           FloatingActionButton.extended(
@@ -85,7 +96,10 @@ class _MealsScreenState extends State<MealsScreen> {
     );
   }
 
-  Future<void> _scanRecipeWithAi(BuildContext context) async {
+  Future<void> _scanRecipeWithAi(
+    BuildContext context, {
+    required bool fromGallery,
+  }) async {
     final appState = AppScope.of(context);
     if (!appState.backendConfigured) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -98,8 +112,10 @@ class _MealsScreenState extends State<MealsScreen> {
     try {
       final RecipeImageScanResult? imageScan;
       final String? pastedText;
-      if (recipeCameraScannerSupported) {
-        imageScan = await scanRecipeFromCamera();
+      if (recipeCameraScannerSupported || recipeGalleryScannerSupported) {
+        imageScan = fromGallery
+            ? await scanRecipeFromGallery()
+            : await scanRecipeFromCamera();
         pastedText = null;
       } else {
         imageScan = null;

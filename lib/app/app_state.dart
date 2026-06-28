@@ -62,6 +62,7 @@ class AppState extends ChangeNotifier {
   bool _initialized = false;
   bool _online = true;
   bool _syncing = false;
+  int _localMutationVersion = 0;
   DateTime? _lastSyncAt;
   String? _lastSyncError;
   String _serverUrl = BackendConfig.normalizedServerUrl;
@@ -1386,16 +1387,25 @@ class AppState extends ChangeNotifier {
       return;
     }
 
+    final syncInput = _data;
+    final mutationVersionAtStart = _localMutationVersion;
     _syncing = true;
     _lastSyncError = null;
     notifyListeners();
     try {
-      _data = await syncService.sync(_data);
+      final syncedData = await syncService.sync(syncInput);
+      final changedDuringSync = _localMutationVersion != mutationVersionAtStart;
+      _data = changedDuringSync
+          ? _mergeForegroundChanges(syncedData: syncedData, foreground: _data)
+          : syncedData;
       _lastSyncAt = DateTime.now();
       await _store.saveAll(_data);
       await _store.saveLastSyncAt(_lastSyncAt!);
       if (_data.family?.syncStatus == SyncStatus.synced) {
         await _store.saveDataServerUrl(_serverUrl);
+      }
+      if (changedDuringSync && _data.pendingCount > 0) {
+        _scheduleSync();
       }
     } catch (error) {
       _lastSyncError = error.toString();
@@ -1403,6 +1413,156 @@ class AppState extends ChangeNotifier {
       _syncing = false;
       notifyListeners();
     }
+  }
+
+  AppData _mergeForegroundChanges({
+    required AppData syncedData,
+    required AppData foreground,
+  }) {
+    return syncedData.copyWith(
+      family: _pickForegroundIfNeeded<Family>(
+        syncedData.family,
+        foreground.family,
+        updatedAtOf: (item) => item.updatedAt,
+        statusOf: (item) => item.syncStatus,
+      ),
+      currentMember: _pickForegroundIfNeeded<Member>(
+        syncedData.currentMember,
+        foreground.currentMember,
+        updatedAtOf: (item) => item.updatedAt,
+        statusOf: (item) => item.syncStatus,
+      ),
+      members: _mergeForegroundList<Member>(
+        syncedData.members,
+        foreground.members,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+        statusOf: (item) => item.syncStatus,
+      ),
+      shoppingItems: _mergeForegroundList<ShoppingItem>(
+        syncedData.shoppingItems,
+        foreground.shoppingItems,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+        statusOf: (item) => item.syncStatus,
+      ),
+      meals: _mergeForegroundList<Meal>(
+        syncedData.meals,
+        foreground.meals,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+        statusOf: (item) => item.syncStatus,
+      ),
+      recipes: _mergeForegroundList<Recipe>(
+        syncedData.recipes,
+        foreground.recipes,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+        statusOf: (item) => item.syncStatus,
+      ),
+      recipeIngredients: _mergeForegroundList<RecipeIngredient>(
+        syncedData.recipeIngredients,
+        foreground.recipeIngredients,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+        statusOf: (item) => item.syncStatus,
+      ),
+      mealPlans: _mergeForegroundList<MealPlan>(
+        syncedData.mealPlans,
+        foreground.mealPlans,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+        statusOf: (item) => item.syncStatus,
+      ),
+      calendarEvents: _mergeForegroundList<CalendarEvent>(
+        syncedData.calendarEvents,
+        foreground.calendarEvents,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+        statusOf: (item) => item.syncStatus,
+      ),
+      nutritionGoals: _mergeForegroundList<NutritionGoal>(
+        syncedData.nutritionGoals,
+        foreground.nutritionGoals,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+        statusOf: (item) => item.syncStatus,
+      ),
+      nutritionEntries: _mergeForegroundList<NutritionEntry>(
+        syncedData.nutritionEntries,
+        foreground.nutritionEntries,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+        statusOf: (item) => item.syncStatus,
+      ),
+      trainingEntries: _mergeForegroundList<TrainingEntry>(
+        syncedData.trainingEntries,
+        foreground.trainingEntries,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+        statusOf: (item) => item.syncStatus,
+      ),
+      favoriteProducts: _mergeForegroundList<FavoriteProduct>(
+        syncedData.favoriteProducts,
+        foreground.favoriteProducts,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+        statusOf: (item) => item.syncStatus,
+      ),
+      receipts: _mergeForegroundList<Receipt>(
+        syncedData.receipts,
+        foreground.receipts,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+        statusOf: (item) => item.syncStatus,
+      ),
+    );
+  }
+
+  T? _pickForegroundIfNeeded<T>(
+    T? synced,
+    T? foreground, {
+    required DateTime Function(T item) updatedAtOf,
+    required SyncStatus Function(T item) statusOf,
+  }) {
+    if (foreground == null) {
+      return synced;
+    }
+    if (synced == null) {
+      return foreground;
+    }
+    final foregroundIsPending = statusOf(foreground) != SyncStatus.synced;
+    if (foregroundIsPending ||
+        updatedAtOf(foreground).isAfter(updatedAtOf(synced))) {
+      return foreground;
+    }
+    return synced;
+  }
+
+  List<T> _mergeForegroundList<T>(
+    List<T> synced,
+    List<T> foreground, {
+    required String Function(T item) idOf,
+    required DateTime Function(T item) updatedAtOf,
+    required SyncStatus Function(T item) statusOf,
+  }) {
+    final merged = [...synced];
+    for (final foregroundItem in foreground) {
+      final index = merged.indexWhere(
+        (syncedItem) => idOf(syncedItem) == idOf(foregroundItem),
+      );
+      if (index == -1) {
+        merged.add(foregroundItem);
+        continue;
+      }
+      final syncedItem = merged[index];
+      final foregroundIsPending = statusOf(foregroundItem) != SyncStatus.synced;
+      if (foregroundIsPending ||
+          updatedAtOf(foregroundItem).isAfter(updatedAtOf(syncedItem))) {
+        merged[index] = foregroundItem;
+      }
+    }
+    return merged;
   }
 
   Future<void> _replaceAfterRemoteSync(AppData data) async {
@@ -1728,6 +1888,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _persist({required bool scheduleSync}) async {
+    _localMutationVersion++;
     await _store.saveAll(_data);
     notifyListeners();
     if (scheduleSync) {

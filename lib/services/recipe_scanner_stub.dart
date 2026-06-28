@@ -20,9 +20,16 @@ class RecipeScanException implements Exception {
 }
 
 bool get recipeCameraScannerSupported => false;
+bool get recipeGalleryScannerSupported => false;
 
 Future<RecipeImageScanResult?> scanRecipeFromCamera() async {
   throw const RecipeScanException(
     'Skaner aparatem działa w aplikacji Android/iOS. W PWA wklej tekst przepisu.',
+  );
+}
+
+Future<RecipeImageScanResult?> scanRecipeFromGallery() async {
+  throw const RecipeScanException(
+    'Skan z galerii działa w aplikacji Android/iOS. W PWA wklej tekst przepisu.',
   );
 }

@@ -251,15 +251,18 @@ class SyncService {
       statusOf: (item) => item.syncStatus,
       optional: true,
     );
-    final pulledReceipts = await _pullList<Receipt>(
-      table: 'receipts',
-      familyId: familyId,
+    final pulledReceipts = _preserveLocalReceiptImages(
+      merged: await _pullList<Receipt>(
+        table: 'receipts',
+        familyId: familyId,
+        local: next.receipts,
+        fromRemote: Receipt.fromRemote,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+        statusOf: (item) => item.syncStatus,
+        optional: true,
+      ),
       local: next.receipts,
-      fromRemote: Receipt.fromRemote,
-      idOf: (item) => item.id,
-      updatedAtOf: (item) => item.updatedAt,
-      statusOf: (item) => item.syncStatus,
-      optional: true,
     );
 
     final currentMember = _refreshCurrentMember(
@@ -440,6 +443,28 @@ class SyncService {
           )
           .toList(),
     );
+  }
+
+  List<Receipt> _preserveLocalReceiptImages({
+    required List<Receipt> merged,
+    required List<Receipt> local,
+  }) {
+    final localById = {for (final receipt in local) receipt.id: receipt};
+    return merged.map((receipt) {
+      final localReceipt = localById[receipt.id];
+      final remoteHasImage = receipt.imageData?.trim().isNotEmpty == true;
+      final localHasImage = localReceipt?.imageData?.trim().isNotEmpty == true;
+      if (remoteHasImage || !localHasImage) {
+        return receipt;
+      }
+      return receipt.copyWith(
+        imageData: localReceipt!.imageData,
+        imageMimeType: localReceipt.imageMimeType,
+        syncStatus: localReceipt.syncStatus == SyncStatus.synced
+            ? SyncStatus.pending
+            : localReceipt.syncStatus,
+      );
+    }).toList();
   }
 
   Member? _refreshCurrentMember(Member? current, List<Member> members) {

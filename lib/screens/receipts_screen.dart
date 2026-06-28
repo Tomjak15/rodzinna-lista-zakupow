@@ -42,7 +42,9 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
           _ReceiptActions(
             scanning: _scanning,
             scannerSupported: receiptCameraScannerSupported,
-            onScan: _scanReceipt,
+            galleryScannerSupported: receiptGalleryScannerSupported,
+            onScan: () => _scanReceipt(fromGallery: false),
+            onScanFromGallery: () => _scanReceipt(fromGallery: true),
             onManualAdd: () async {
               final savedReceipt = await _openReceiptEditor(context);
               if (!mounted || savedReceipt == null) {
@@ -60,7 +62,9 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
       ),
       floatingActionButton: receiptCameraScannerSupported
           ? FloatingActionButton.extended(
-              onPressed: _scanning ? null : _scanReceipt,
+              onPressed: _scanning
+                  ? null
+                  : () => _scanReceipt(fromGallery: false),
               icon: _scanning
                   ? const SizedBox.square(
                       dimension: 18,
@@ -83,14 +87,19 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
     );
   }
 
-  Future<void> _scanReceipt() async {
-    if (!receiptCameraScannerSupported || _scanning) {
+  Future<void> _scanReceipt({required bool fromGallery}) async {
+    final scannerSupported = fromGallery
+        ? receiptGalleryScannerSupported
+        : receiptCameraScannerSupported;
+    if (!scannerSupported || _scanning) {
       return;
     }
     setState(() => _scanning = true);
     try {
       final appState = AppScope.of(context);
-      final result = await scanReceiptFromCamera();
+      final result = fromGallery
+          ? await scanReceiptFromGallery()
+          : await scanReceiptFromCamera();
       if (!mounted || result == null) {
         return;
       }
@@ -209,13 +218,17 @@ class _ReceiptActions extends StatelessWidget {
   const _ReceiptActions({
     required this.scanning,
     required this.scannerSupported,
+    required this.galleryScannerSupported,
     required this.onScan,
+    required this.onScanFromGallery,
     required this.onManualAdd,
   });
 
   final bool scanning;
   final bool scannerSupported;
+  final bool galleryScannerSupported;
   final VoidCallback onScan;
+  final VoidCallback onScanFromGallery;
   final VoidCallback onManualAdd;
 
   @override
@@ -233,6 +246,13 @@ class _ReceiptActions extends StatelessWidget {
                 )
               : const Icon(Icons.document_scanner_outlined),
           label: const Text('Skanuj paragon'),
+        ),
+        OutlinedButton.icon(
+          onPressed: galleryScannerSupported && !scanning
+              ? onScanFromGallery
+              : null,
+          icon: const Icon(Icons.photo_library_outlined),
+          label: const Text('Z galerii'),
         ),
         OutlinedButton.icon(
           onPressed: onManualAdd,
@@ -474,6 +494,8 @@ void _showReceiptPhotoData(
                   child: Image.memory(
                     bytes,
                     fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                    filterQuality: FilterQuality.medium,
                     errorBuilder: (_, __, ___) =>
                         const Icon(Icons.broken_image_outlined),
                   ),
@@ -507,6 +529,8 @@ class _ReceiptThumbnail extends StatelessWidget {
             : Image.memory(
                 bytes,
                 fit: BoxFit.cover,
+                gaplessPlayback: true,
+                filterQuality: FilterQuality.medium,
                 errorBuilder: (_, __, ___) => Icon(
                   Icons.receipt_long_outlined,
                   color: scheme.onSurfaceVariant,
@@ -730,6 +754,8 @@ class _ReceiptPhotoPreview extends StatelessWidget {
             : Image.memory(
                 bytes,
                 fit: BoxFit.contain,
+                gaplessPlayback: true,
+                filterQuality: FilterQuality.medium,
                 errorBuilder: (_, __, ___) => const SizedBox(
                   height: 160,
                   child: Center(child: Icon(Icons.broken_image_outlined)),
@@ -1063,6 +1089,9 @@ bool _receiptItemsLookCoherent(ParsedReceipt receipt) {
   return sum <= receipt.total * 1.2;
 }
 
+final _receiptImageCache = <String, Uint8List?>{};
+const _receiptImageCacheLimit = 24;
+
 Uint8List? _decodeReceiptImage(String? imageData) {
   var normalized = imageData?.trim();
   if (normalized == null || normalized.isEmpty) {
@@ -1073,15 +1102,26 @@ Uint8List? _decodeReceiptImage(String? imageData) {
     normalized = normalized.substring(dataUrlSeparator + 1);
   }
   normalized = normalized.replaceAll(RegExp(r'\s+'), '');
+  final cacheKey = '${normalized.length}:${normalized.hashCode}';
+  if (_receiptImageCache.containsKey(cacheKey)) {
+    return _receiptImageCache[cacheKey];
+  }
+
+  Uint8List? decoded;
   try {
-    return base64Decode(normalized);
+    decoded = base64Decode(normalized);
   } on FormatException {
     try {
-      return base64Url.decode(base64Url.normalize(normalized));
+      decoded = base64Url.decode(base64Url.normalize(normalized));
     } on FormatException {
-      return null;
+      decoded = null;
     }
   }
+  _receiptImageCache[cacheKey] = decoded;
+  while (_receiptImageCache.length > _receiptImageCacheLimit) {
+    _receiptImageCache.remove(_receiptImageCache.keys.first);
+  }
+  return decoded;
 }
 
 String _formatMoney(double value) {
