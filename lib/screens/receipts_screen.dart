@@ -88,8 +88,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
             hints: buildProductScanHints(appState.data),
             familyId: appState.data.family?.id,
           );
-          if (_receiptParseScore(localParsed) >
-              _receiptParseScore(serverParsed)) {
+          if (_shouldKeepLocalReceipt(localParsed, serverParsed)) {
             parsed = localParsed;
             scanNotice ??=
                 'Serwer zwrócił słabszy odczyt niż lokalny OCR. Sprawdź dane przed zapisem.';
@@ -998,6 +997,19 @@ int _receiptParseScore(ParsedReceipt receipt) {
     score -= 8;
   }
   return score;
+}
+
+bool _shouldKeepLocalReceipt(ParsedReceipt local, ParsedReceipt server) {
+  final localScore = _receiptParseScore(local);
+  final serverScore = _receiptParseScore(server);
+  final serverHasData = server.items.isNotEmpty || server.total > 0;
+  if (!serverHasData) {
+    return localScore > 0;
+  }
+  if (!_receiptItemsLookCoherent(server) && _receiptItemsLookCoherent(local)) {
+    return localScore > serverScore;
+  }
+  return localScore >= serverScore + 12;
 }
 
 bool _receiptItemsLookCoherent(ParsedReceipt receipt) {

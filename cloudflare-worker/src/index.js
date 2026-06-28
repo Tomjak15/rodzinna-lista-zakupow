@@ -390,6 +390,14 @@ async function scanReceipt(request, env) {
     workersAiModel:
       env.CLOUDFLARE_RECEIPT_VISION_MODEL || defaultWorkersAiVisionModel,
   });
+  if (
+    cleanText(body?.imageData) &&
+    !cleanText(body?.text) &&
+    Array.isArray(result.items) &&
+    result.items.length === 0
+  ) {
+    return json({ storeName: "Sklep", total: 0, items: [] });
+  }
   return json(result);
 }
 
@@ -570,9 +578,11 @@ async function scanReceiptFromRequest({
     throw new ApiError("Dodaj zdjęcie albo tekst paragonu.", 400);
   }
 
+  const receiptCandidates = [];
+
   if (apiKey) {
     try {
-      return normalizeReceiptScanDraft(
+      const openAiResult = normalizeReceiptScanDraft(
         await scanReceiptWithOpenAi({
           apiKey,
           model,
@@ -583,8 +593,13 @@ async function scanReceiptFromRequest({
         }),
         hints,
       );
+      addReceiptCandidate(
+        receiptCandidates,
+        openAiResult,
+        imageData ? "openai-image" : "openai",
+      );
     } catch (error) {
-      if (!text) {
+      if (!text && !workersAi) {
         throw error;
       }
       console.warn(
@@ -597,9 +612,7 @@ async function scanReceiptFromRequest({
   const textFallback = text
     ? normalizeReceiptScanDraft(parseReceiptTextFallback(text), hints)
     : null;
-  if (textFallback && isReceiptScanUseful(textFallback) && !workersAi) {
-    return textFallback;
-  }
+  addReceiptCandidate(receiptCandidates, textFallback, "fallback");
 
   if (text && workersAi) {
     try {
@@ -611,9 +624,7 @@ async function scanReceiptFromRequest({
         }),
         hints,
       );
-      if (isReceiptScanUseful(aiTextResult)) {
-        return betterReceiptScan(aiTextResult, textFallback);
-      }
+      addReceiptCandidate(receiptCandidates, aiTextResult, "text-ai");
     } catch (error) {
       console.warn(
         "Workers AI receipt text scan failed, using fallback:",
@@ -622,11 +633,43 @@ async function scanReceiptFromRequest({
     }
   }
 
-  if (textFallback && (textFallback.items.length > 0 || textFallback.total > 0)) {
-    return textFallback;
-  }
-
   if (imageData && workersAi) {
+    try {
+      const imageText = await readReceiptImageTextWithWorkersAi({
+        workersAi,
+        model: workersAiModel,
+        text,
+        imageData,
+        imageMimeType,
+      });
+      if (imageText) {
+        addReceiptCandidate(
+          receiptCandidates,
+          normalizeReceiptScanDraft(parseReceiptTextFallback(imageText), hints),
+          "image-ocr-fallback",
+        );
+        try {
+          const imageTextAiResult = normalizeReceiptScanDraft(
+            await scanReceiptTextWithWorkersAi({
+              workersAi,
+              text: combineScanText(imageText, text),
+              hints,
+            }),
+            hints,
+          );
+          addReceiptCandidate(
+            receiptCandidates,
+            imageTextAiResult,
+            "image-ocr-ai",
+          );
+        } catch (error) {
+          console.warn("Workers AI receipt OCR text parse failed:", error.message);
+        }
+      }
+    } catch (error) {
+      console.warn("Workers AI receipt image OCR failed:", error.message);
+    }
+
     try {
       const imageAiResult = normalizeReceiptScanDraft(
         await scanReceiptWithWorkersAi({
@@ -639,9 +682,7 @@ async function scanReceiptFromRequest({
         }),
         hints,
       );
-      return isReceiptScanCoherent(imageAiResult)
-        ? imageAiResult
-        : { ...imageAiResult, items: [] };
+      addReceiptCandidate(receiptCandidates, imageAiResult, "image-ai");
     } catch (error) {
       if (!text) {
         throw new ApiError(
@@ -656,6 +697,11 @@ async function scanReceiptFromRequest({
     }
   }
 
+  const bestCandidate = bestReceiptCandidate(receiptCandidates);
+  if (bestCandidate) {
+    return bestCandidate;
+  }
+
   if (!text) {
     throw new ApiError(
       "Nie udalo sie odczytac zdjecia. Zrob wyrazniejsze zdjecie albo wpisz tekst recznie.",
@@ -663,7 +709,7 @@ async function scanReceiptFromRequest({
     );
   }
 
-  return textFallback;
+  return textFallback || { storeName: "Sklep", total: 0, items: [] };
 }
 
 async function scanReceiptWithOpenAi({
@@ -793,27 +839,88 @@ async function scanReceiptWithWorkersAi({
   });
 }
 
+async function readReceiptImageTextWithWorkersAi({
+  workersAi,
+  model,
+  text,
+  imageData,
+  imageMimeType,
+}) {
+  return runWorkersAiVisionText({
+    workersAi,
+    model,
+    imageData,
+    imageMimeType,
+    system:
+      "Jestes OCR-em do polskich paragonow. Przepisujesz widoczny tekst, nie robisz JSON.",
+    prompt: [
+      "Przepisz dokladnie tekst z paragonu widocznego na zdjeciu.",
+      "Zachowaj osobne linie. Nie tlumacz, nie streszczaj, nie zgaduj produktow.",
+      "Szczegolnie wazne sa: sklep, nazwy produktow, ilosci, ceny i suma.",
+      text ? `Tekst OCR z telefonu jako pomoc, moze byc bledny:\n${text}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  });
+}
+
 function isReceiptScanUseful(value) {
   return value.items.length > 0 && value.total > 0;
 }
 
-function betterReceiptScan(primary, fallback) {
-  if (!fallback) {
-    return primary;
+function addReceiptCandidate(candidates, value, source) {
+  if (!value || (value.items.length === 0 && value.total <= 0)) {
+    return;
   }
-  return receiptScanScore(primary) >= receiptScanScore(fallback)
-    ? primary
-    : fallback;
+  if (source.includes("image") && value.items.length === 0) {
+    return;
+  }
+  candidates.push({ value, source, score: receiptScanScore(value, source) });
 }
 
-function receiptScanScore(value) {
-  if (!value) {
-    return 0;
+function bestReceiptCandidate(candidates) {
+  if (candidates.length === 0) {
+    return null;
   }
+  const sorted = [...candidates].sort((a, b) => b.score - a.score);
+  const best = sorted[0].value;
+  if (isReceiptScanCoherent(best)) {
+    return best;
+  }
+
+  const coherent = sorted.find((candidate) =>
+    isReceiptScanCoherent(candidate.value),
+  );
+  if (coherent) {
+    return coherent.value;
+  }
+  return { ...best, items: [] };
+}
+
+function receiptScanScore(value, source = "") {
+  const sum = value.items.reduce((total, item) => total + item.price, 0);
+  const hasNamedStore = cleanText(value.storeName) && value.storeName !== "Sklep";
+  const hasRealTotal = value.total > 0;
+  const coherent = isReceiptScanCoherent(value);
+  const sourceBonus =
+    source === "image-ocr-ai"
+      ? 12
+    : source === "image-ai"
+      ? -6
+    : source === "image-ocr-fallback"
+      ? 6
+    : source === "text-ai"
+      ? 5
+      : 0;
+
   return (
-    value.items.length * 20 +
-    (value.total > 0 ? 10 : 0) +
-    (cleanText(value.storeName) && value.storeName !== "Sklep" ? 4 : 0)
+    value.items.length * 25 +
+    value.items.filter((item) => item.price > 0).length * 4 +
+    (hasRealTotal ? 18 : 0) +
+    (hasNamedStore ? 6 : 0) +
+    (coherent ? 12 : -25) +
+    (sum > 0 ? 4 : 0) +
+    sourceBonus
   );
 }
 
@@ -967,9 +1074,11 @@ async function scanRecipeFromRequest({
     throw new ApiError("Dodaj zdjęcie albo tekst przepisu.", 400);
   }
 
+  const recipeCandidates = [];
+
   if (apiKey) {
     try {
-      return normalizeRecipeScanDraft(
+      const openAiResult = normalizeRecipeScanDraft(
         await scanRecipeWithOpenAi({
           apiKey,
           model,
@@ -980,8 +1089,13 @@ async function scanRecipeFromRequest({
         }),
         hints,
       );
+      addRecipeCandidate(
+        recipeCandidates,
+        openAiResult,
+        imageData ? "openai-image" : "openai",
+      );
     } catch (error) {
-      if (!text) {
+      if (!text && !workersAi) {
         throw error;
       }
       console.warn("AI recipe scan failed, using text fallback:", error.message);
@@ -989,13 +1103,11 @@ async function scanRecipeFromRequest({
   }
 
   const textFallback = text ? tryParseRecipeTextFallback(text, hints) : null;
-  if (textFallback && !workersAi) {
-    return textFallback;
-  }
+  addRecipeCandidate(recipeCandidates, textFallback, "fallback");
 
   if (text && workersAi) {
     try {
-      return normalizeRecipeScanDraft(
+      const aiTextResult = normalizeRecipeScanDraft(
         await scanRecipeTextWithWorkersAi({
           workersAi,
           text,
@@ -1003,6 +1115,7 @@ async function scanRecipeFromRequest({
         }),
         hints,
       );
+      addRecipeCandidate(recipeCandidates, aiTextResult, "text-ai");
     } catch (error) {
       console.warn(
         "Workers AI recipe text scan failed, using image fallback:",
@@ -1011,13 +1124,41 @@ async function scanRecipeFromRequest({
     }
   }
 
-  if (textFallback) {
-    return textFallback;
-  }
-
   if (imageData && workersAi) {
     try {
-      return normalizeRecipeScanDraft(
+      const imageText = await readRecipeImageTextWithWorkersAi({
+        workersAi,
+        model: workersAiModel,
+        text,
+        imageData,
+        imageMimeType,
+      });
+      if (imageText) {
+        addRecipeCandidate(
+          recipeCandidates,
+          tryParseRecipeTextFallback(imageText, hints),
+          "image-ocr-fallback",
+        );
+        try {
+          const imageTextAiResult = normalizeRecipeScanDraft(
+            await scanRecipeTextWithWorkersAi({
+              workersAi,
+              text: combineScanText(imageText, text),
+              hints,
+            }),
+            hints,
+          );
+          addRecipeCandidate(recipeCandidates, imageTextAiResult, "image-ocr-ai");
+        } catch (error) {
+          console.warn("Workers AI recipe OCR text parse failed:", error.message);
+        }
+      }
+    } catch (error) {
+      console.warn("Workers AI recipe image OCR failed:", error.message);
+    }
+
+    try {
+      const imageAiResult = normalizeRecipeScanDraft(
         await scanRecipeWithWorkersAi({
           workersAi,
           model: workersAiModel,
@@ -1028,6 +1169,7 @@ async function scanRecipeFromRequest({
         }),
         hints,
       );
+      addRecipeCandidate(recipeCandidates, imageAiResult, "image-ai");
     } catch (error) {
       if (!text) {
         throw new ApiError(
@@ -1040,6 +1182,11 @@ async function scanRecipeFromRequest({
         error.message,
       );
     }
+  }
+
+  const bestCandidate = bestRecipeCandidate(recipeCandidates);
+  if (bestCandidate) {
+    return bestCandidate;
   }
 
   if (!text) {
@@ -1175,6 +1322,31 @@ async function scanRecipeWithWorkersAi({
       hintsText,
       'Zwroc tylko JSON w formacie: {"name":"Nazwa","category":"Obiady","instructions":"Opis","baseServings":4,"caloriesPerServing":0,"proteinPerServing":0,"fatPerServing":0,"carbsPerServing":0,"ingredients":[{"name":"Produkt","quantity":1,"unit":"szt."}]}',
       text ? `Tekst OCR/uzytkownika:\n${text}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  });
+}
+
+async function readRecipeImageTextWithWorkersAi({
+  workersAi,
+  model,
+  text,
+  imageData,
+  imageMimeType,
+}) {
+  return runWorkersAiVisionText({
+    workersAi,
+    model,
+    imageData,
+    imageMimeType,
+    system:
+      "Jestes OCR-em do polskich przepisow kulinarnych. Przepisujesz widoczny tekst, nie robisz JSON.",
+    prompt: [
+      "Przepisz dokladnie tekst przepisu widoczny na zdjeciu.",
+      "Zachowaj osobne linie i nie streszczaj.",
+      "Szczegolnie wazne sa: nazwa, skladniki, ilosci, jednostki, porcje, instrukcja i makro.",
+      text ? `Tekst OCR z telefonu jako pomoc, moze byc bledny:\n${text}` : "",
     ]
       .filter(Boolean)
       .join("\n"),
@@ -1730,7 +1902,57 @@ function workersAiModelCandidates(model) {
     .filter((item, index, array) => array.indexOf(item) === index);
 }
 
+async function runWorkersAiVisionText(options) {
+  const outputs = [];
+  let lastError = null;
+  for (const model of workersAiModelCandidates(options.model)) {
+    try {
+      const text = await runWorkersAiVisionRaw({ ...options, model });
+      const cleaned = cleanVisionOcrText(text);
+      if (cleaned) {
+        outputs.push({ text: cleaned, score: visionOcrTextScore(cleaned) });
+      }
+    } catch (error) {
+      lastError = error;
+      console.warn(`Workers AI OCR model ${model} failed:`, error.message);
+    }
+  }
+
+  if (outputs.length > 0) {
+    return outputs.sort((a, b) => b.score - a.score)[0].text;
+  }
+  if (lastError instanceof ApiError) {
+    throw lastError;
+  }
+  throw new ApiError(
+    lastError?.message || "Cloudflare AI nie przepisalo tekstu ze zdjecia.",
+    lastError?.statusCode || 502,
+  );
+}
+
 async function runWorkersAiVisionJson({
+  workersAi,
+  model,
+  imageData,
+  imageMimeType,
+  system,
+  prompt,
+}) {
+  const outputText = await runWorkersAiVisionRaw({
+    workersAi,
+    model,
+    imageData,
+    imageMimeType,
+    system,
+    prompt,
+  });
+  if (!outputText) {
+    throw new ApiError("AI nie zwrocilo tekstu z odczytem obrazu.", 502);
+  }
+  return outputText;
+}
+
+async function runWorkersAiVisionRaw({
   workersAi,
   model,
   imageData,
@@ -1743,27 +1965,14 @@ async function runWorkersAiVisionJson({
   }
 
   const modelName = model || defaultWorkersAiVisionModel;
-  const response = modelName.includes("/llava-")
-    ? await workersAi.run(modelName, {
-        image: base64ToByteArray(imageData),
-        prompt: `${system}\n\n${prompt}`,
-        max_tokens: 1800,
-      })
-    : await workersAi.run(modelName, {
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: prompt },
-        ],
-        image: `data:${imageMimeType};base64,${imageData}`,
-        max_tokens: 1800,
-        temperature: 0.1,
-      });
+  const response = await workersAi.run(modelName, {
+    image: base64ToByteArray(imageData),
+    prompt: `${system}\n\n${prompt}`,
+    max_tokens: 1800,
+    temperature: 0.1,
+  });
 
-  const outputText = extractWorkersAiOutputText(response);
-  if (!outputText) {
-    throw new ApiError("AI nie zwrocilo tekstu z odczytem obrazu.", 502);
-  }
-  return outputText;
+  return extractWorkersAiOutputText(response);
 }
 
 function extractWorkersAiOutputText(payload) {
@@ -1806,6 +2015,44 @@ function base64ToByteArray(value) {
   return bytes;
 }
 
+function cleanVisionOcrText(value) {
+  return cleanText(value)
+    .replace(/^```(?:text)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .replace(/^(oto|ponizej|poniżej).{0,80}:\s*/i, "")
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .replace(/^[\s>*-]+/, "")
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
+function visionOcrTextScore(value) {
+  const text = cleanText(value);
+  const lines = text.split(/\r?\n/).filter((line) => line.trim().length >= 2);
+  const priceLike = (text.match(/\d+[,.]\d{2}/g) || []).length;
+  const unitLike = (text.match(/\b(kg|g|l|ml|szt|porcj|lyzk|łyżk)\b/gi) || [])
+    .length;
+  return text.length + lines.length * 12 + priceLike * 20 + unitLike * 8;
+}
+
+function combineScanText(primary, secondary) {
+  const first = cleanText(primary);
+  const second = cleanText(secondary);
+  if (!first) {
+    return second;
+  }
+  if (!second || normalizeHintSearch(first) === normalizeHintSearch(second)) {
+    return first;
+  }
+  return `${first}\n\nOCR telefonu:\n${second}`;
+}
+
 function parseAiJsonObject(text) {
   const trimmed = cleanText(text)
     .replace(/^```(?:json)?\s*/i, "")
@@ -1834,6 +2081,49 @@ function tryParseRecipeTextFallback(text, hints = []) {
   } catch (_) {
     return null;
   }
+}
+
+function addRecipeCandidate(candidates, value, source) {
+  if (!value || value.ingredients.length === 0) {
+    return;
+  }
+  candidates.push({ value, source, score: recipeScanScore(value, source) });
+}
+
+function bestRecipeCandidate(candidates) {
+  if (candidates.length === 0) {
+    return null;
+  }
+  return [...candidates].sort((a, b) => b.score - a.score)[0].value;
+}
+
+function recipeScanScore(value, source = "") {
+  const hasRealName = cleanText(value.name) && value.name !== "Nowy przepis";
+  const hasInstructions = cleanText(value.instructions).length >= 12;
+  const hasMacro =
+    value.caloriesPerServing > 0 ||
+    value.proteinPerServing > 0 ||
+    value.fatPerServing > 0 ||
+    value.carbsPerServing > 0;
+  const sourceBonus =
+    source === "image-ocr-ai"
+      ? 16
+    : source === "image-ai"
+      ? -4
+    : source === "image-ocr-fallback"
+      ? 8
+    : source === "text-ai"
+      ? 7
+      : 0;
+
+  return (
+    value.ingredients.length * 18 +
+    (hasRealName ? 8 : 0) +
+    (hasInstructions ? 12 : 0) +
+    (value.baseServings > 1 ? 4 : 0) +
+    (hasMacro ? 3 : 0) +
+    sourceBonus
+  );
 }
 
 function parseRecipeTextFallback(text) {

@@ -37,8 +37,8 @@ Future<RecipeImageScanResult?> scanRecipeFromCamera() async {
   final picker = ImagePicker();
   final image = await picker.pickImage(
     source: ImageSource.camera,
-    imageQuality: 95,
-    maxWidth: 2400,
+    imageQuality: 100,
+    maxWidth: 4096,
   );
   if (image == null) {
     return null;
