@@ -174,6 +174,8 @@ const tables = [
       "fat",
       "carbs",
       "note",
+      "image_data",
+      "image_mime_type",
       "created_at",
       "updated_at",
       "created_by",

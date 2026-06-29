@@ -172,4 +172,31 @@ void main() {
     expect(entry.carbs, 36);
     expect(entry.note, 'Kurczak z ryzem (80% porcji)');
   });
+
+  test('wpis zdrowia zapisuje zdjecie posilku do synchronizacji', () async {
+    final store = await LocalStore.create();
+    final appState = AppState(store: store);
+    addTearDown(appState.dispose);
+
+    await appState.createFamily(familyName: 'Dom', memberName: 'Tomek');
+    await appState.addNutritionEntry(
+      date: DateTime(2026, 6, 21),
+      calories: 450,
+      protein: 30,
+      fat: 12,
+      carbs: 55,
+      note: 'Obiad',
+      imageData: 'abc123',
+      imageMimeType: 'image/jpeg',
+    );
+
+    final entry = appState
+        .nutritionEntriesForDate(DateTime(2026, 6, 21))
+        .single;
+    expect(entry.imageData, 'abc123');
+    expect(entry.imageMimeType, 'image/jpeg');
+    expect(entry.toJson()['imageData'], 'abc123');
+    expect(entry.toRemote()['image_data'], 'abc123');
+    expect(entry.toRemote()['image_mime_type'], 'image/jpeg');
+  });
 }

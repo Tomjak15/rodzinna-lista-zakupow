@@ -190,6 +190,8 @@ const tables = {
       "fat",
       "carbs",
       "note",
+      "image_data",
+      "image_mime_type",
       "created_at",
       "updated_at",
       "created_by",
@@ -261,7 +263,7 @@ app.get("/", (_req, res) => {
   res.json({
     name: "Rodzinna Lista Zakupów API",
     status: "ok",
-    schemaVersion: 7,
+    schemaVersion: 8,
     health: "/api/health",
   });
 });
@@ -276,7 +278,7 @@ app.get("/api/health", (_req, res) => {
 
   res.json({
     ok: missingTables.length === 0,
-    schemaVersion: 7,
+    schemaVersion: 8,
     database: path.basename(dbPath),
     dbPath,
     expectedTables,
@@ -497,6 +499,8 @@ function initializeDatabase() {
       fat real not null default 0,
       carbs real not null default 0,
       note text not null default '',
+      image_data text,
+      image_mime_type text,
       created_at text not null,
       updated_at text not null,
       created_by text not null,
@@ -580,6 +584,8 @@ function initializeDatabase() {
   ensureColumn("nutrition_goals", "daily_carbs", "real not null default 0");
   ensureColumn("nutrition_entries", "fat", "real not null default 0");
   ensureColumn("nutrition_entries", "carbs", "real not null default 0");
+  ensureColumn("nutrition_entries", "image_data", "text");
+  ensureColumn("nutrition_entries", "image_mime_type", "text");
   ensureColumn("receipts", "image_data", "text");
   ensureColumn("receipts", "image_mime_type", "text");
 }
@@ -652,7 +658,9 @@ function defaultMissingValue(table, config, column) {
   if (
     column === "parent_recipe_id" ||
     column === "member_id" ||
-    column === "category"
+    column === "category" ||
+    column === "image_data" ||
+    column === "image_mime_type"
   ) {
     return null;
   }

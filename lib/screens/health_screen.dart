@@ -1,10 +1,13 @@
+import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../app/app_scope.dart';
 import '../models/entities.dart';
+import '../services/nutrition_photo_picker.dart';
 
 class HealthScreen extends StatefulWidget {
   const HealthScreen({super.key});
@@ -174,6 +177,8 @@ class _HealthScreenState extends State<HealthScreen> {
         date: _selectedDate,
         recipe: draft.recipe!,
         servingPercent: draft.servingPercent!,
+        imageData: draft.imageData,
+        imageMimeType: draft.imageMimeType,
       );
       return;
     }
@@ -184,6 +189,8 @@ class _HealthScreenState extends State<HealthScreen> {
       fat: draft.fat,
       carbs: draft.carbs,
       note: draft.note,
+      imageData: draft.imageData,
+      imageMimeType: draft.imageMimeType,
     );
   }
 
@@ -626,9 +633,14 @@ class _NutritionEntryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasPhoto = _decodeNutritionImage(entry.imageData) != null;
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.local_fire_department_outlined),
+      leading: _NutritionPhotoThumb(
+        imageData: entry.imageData,
+        fallbackIcon: Icons.local_fire_department_outlined,
+        onTap: hasPhoto ? () => _openNutritionPhoto(context, entry) : null,
+      ),
       title: Text(
         '${entry.calories} kcal, ${_number(entry.protein)} g białka, '
         '${_number(entry.fat)} g tł., ${_number(entry.carbs)} g węgli',
@@ -641,6 +653,89 @@ class _NutritionEntryTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _NutritionPhotoThumb extends StatelessWidget {
+  const _NutritionPhotoThumb({
+    required this.imageData,
+    required this.fallbackIcon,
+    this.onTap,
+  });
+
+  final String? imageData;
+  final IconData fallbackIcon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = _decodeNutritionImage(imageData);
+    if (bytes == null) {
+      return Icon(fallbackIcon);
+    }
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.memory(
+          bytes,
+          width: 44,
+          height: 44,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+        ),
+      ),
+    );
+  }
+}
+
+void _openNutritionPhoto(BuildContext context, NutritionEntry entry) {
+  final bytes = _decodeNutritionImage(entry.imageData);
+  if (bytes == null) {
+    return;
+  }
+  showDialog<void>(
+    context: context,
+    builder: (_) => Dialog(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 680),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      entry.note.isEmpty ? 'Zdjecie posilku' : entry.note,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Zamknij',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: InteractiveViewer(
+                    child: Image.memory(bytes, fit: BoxFit.contain),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _TrainingEntryTile extends StatelessWidget {
@@ -732,45 +827,56 @@ class _NutritionGoalDialogState extends State<_NutritionGoalDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text('Cel - ${widget.member.name}'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _caloriesController,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Cel kcal',
-              suffixText: 'kcal',
-            ),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 430),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _caloriesController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Cel kcal',
+                  suffixText: 'kcal',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _proteinController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Cel białka',
+                  suffixText: 'g',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _fatController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Cel tłuszczu',
+                  suffixText: 'g',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _carbsController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Cel węglowodanów',
+                  suffixText: 'g',
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _proteinController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Cel białka',
-              suffixText: 'g',
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _fatController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Cel tłuszczu',
-              suffixText: 'g',
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _carbsController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Cel węglowodanów',
-              suffixText: 'g',
-            ),
-          ),
-        ],
+        ),
       ),
       actions: [
         TextButton(
@@ -818,6 +924,9 @@ class _NutritionEntryDialogState extends State<_NutritionEntryDialog> {
   final _percentController = TextEditingController(text: '100');
   int _mode = 0;
   String? _recipeId;
+  String? _imageData;
+  String? _imageMimeType;
+  bool _pickingPhoto = false;
 
   @override
   void dispose() {
@@ -845,87 +954,94 @@ class _NutritionEntryDialogState extends State<_NutritionEntryDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text('Dodaj kcal - ${DateFormat('dd.MM').format(widget.date)}'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (widget.recipes.isNotEmpty) ...[
-            SegmentedButton<int>(
-              segments: const [
-                ButtonSegment(
-                  value: 0,
-                  icon: Icon(Icons.edit_outlined),
-                  label: Text('Ręcznie'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 430),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.recipes.isNotEmpty) ...[
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 0,
+                      icon: Icon(Icons.edit_outlined),
+                      label: Text('Ręcznie'),
+                    ),
+                    ButtonSegment(
+                      value: 1,
+                      icon: Icon(Icons.restaurant_menu),
+                      label: Text('Z przepisu'),
+                    ),
+                  ],
+                  selected: {_mode},
+                  onSelectionChanged: (value) =>
+                      setState(() => _mode = value.first),
                 ),
-                ButtonSegment(
-                  value: 1,
-                  icon: Icon(Icons.restaurant_menu),
-                  label: Text('Z przepisu'),
+                const SizedBox(height: 12),
+              ],
+              if (_mode == 1 && widget.recipes.isNotEmpty)
+                _RecipeNutritionPicker(
+                  recipes: widget.recipes,
+                  selectedRecipe: _selectedRecipe!,
+                  percentController: _percentController,
+                  onRecipeChanged: (id) => setState(() => _recipeId = id),
+                  onPercentChanged: () => setState(() {}),
+                )
+              else ...[
+                TextField(
+                  controller: _caloriesController,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Kcal',
+                    suffixText: 'kcal',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _proteinController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Białko',
+                    suffixText: 'g',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _fatController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Tłuszcze',
+                    suffixText: 'g',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _carbsController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Węglowodany',
+                    suffixText: 'g',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _noteController,
+                  decoration: const InputDecoration(labelText: 'Opis'),
                 ),
               ],
-              selected: {_mode},
-              onSelectionChanged: (value) =>
-                  setState(() => _mode = value.first),
-            ),
-            const SizedBox(height: 12),
-          ],
-          if (_mode == 1 && widget.recipes.isNotEmpty)
-            _RecipeNutritionPicker(
-              recipes: widget.recipes,
-              selectedRecipe: _selectedRecipe!,
-              percentController: _percentController,
-              onRecipeChanged: (id) => setState(() => _recipeId = id),
-              onPercentChanged: () => setState(() {}),
-            )
-          else ...[
-            TextField(
-              controller: _caloriesController,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Kcal',
-                suffixText: 'kcal',
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _proteinController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                labelText: 'Białko',
-                suffixText: 'g',
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _fatController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                labelText: 'Tłuszcze',
-                suffixText: 'g',
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _carbsController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                labelText: 'Węglowodany',
-                suffixText: 'g',
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _noteController,
-              decoration: const InputDecoration(labelText: 'Opis'),
-            ),
-          ],
-        ],
+              const SizedBox(height: 12),
+              _photoSection(),
+            ],
+          ),
+        ),
       ),
       actions: [
         TextButton(
@@ -951,6 +1067,8 @@ class _NutritionEntryDialogState extends State<_NutritionEntryDialog> {
           note: '',
           recipe: recipe,
           servingPercent: percent,
+          imageData: _imageData,
+          imageMimeType: _imageMimeType,
         ),
       );
       return;
@@ -963,8 +1081,109 @@ class _NutritionEntryDialogState extends State<_NutritionEntryDialog> {
         fat: _parseDouble(_fatController.text),
         carbs: _parseDouble(_carbsController.text),
         note: _noteController.text.trim(),
+        imageData: _imageData,
+        imageMimeType: _imageMimeType,
       ),
     );
+  }
+
+  Widget _photoSection() {
+    final bytes = _decodeNutritionImage(_imageData);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Zdjecie posilku',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (_pickingPhoto)
+              const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (bytes != null) ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.memory(
+              bytes,
+              height: 150,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed: nutritionCameraPhotoSupported && !_pickingPhoto
+                  ? () => _pickPhoto(fromGallery: false)
+                  : null,
+              icon: const Icon(Icons.photo_camera_outlined),
+              label: Text(bytes == null ? 'Aparat' : 'Zmien'),
+            ),
+            OutlinedButton.icon(
+              onPressed: nutritionGalleryPhotoSupported && !_pickingPhoto
+                  ? () => _pickPhoto(fromGallery: true)
+                  : null,
+              icon: const Icon(Icons.photo_library_outlined),
+              label: const Text('Galeria'),
+            ),
+            if (bytes != null)
+              IconButton.outlined(
+                tooltip: 'Usun zdjecie',
+                onPressed: _pickingPhoto
+                    ? null
+                    : () => setState(() {
+                        _imageData = null;
+                        _imageMimeType = null;
+                      }),
+                icon: const Icon(Icons.delete_outline),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickPhoto({required bool fromGallery}) async {
+    if (_pickingPhoto) {
+      return;
+    }
+    setState(() => _pickingPhoto = true);
+    try {
+      final result = fromGallery
+          ? await pickNutritionPhotoFromGallery()
+          : await pickNutritionPhotoFromCamera();
+      if (!mounted || result == null) {
+        return;
+      }
+      setState(() {
+        _imageData = result.imageData;
+        _imageMimeType = result.imageMimeType;
+      });
+    } on NutritionPhotoException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) {
+        setState(() => _pickingPhoto = false);
+      }
+    }
   }
 }
 
@@ -1141,6 +1360,8 @@ class _NutritionEntryDraft {
     required this.note,
     this.recipe,
     this.servingPercent,
+    this.imageData,
+    this.imageMimeType,
   });
 
   final int calories;
@@ -1150,6 +1371,8 @@ class _NutritionEntryDraft {
   final String note;
   final Recipe? recipe;
   final double? servingPercent;
+  final String? imageData;
+  final String? imageMimeType;
 }
 
 class _TrainingEntryDraft {
@@ -1162,6 +1385,41 @@ class _TrainingEntryDraft {
   final String activity;
   final int durationMinutes;
   final String note;
+}
+
+final _nutritionImageCache = <String, Uint8List?>{};
+const _nutritionImageCacheLimit = 24;
+
+Uint8List? _decodeNutritionImage(String? imageData) {
+  var normalized = imageData?.trim();
+  if (normalized == null || normalized.isEmpty) {
+    return null;
+  }
+  final dataUrlSeparator = normalized.indexOf(',');
+  if (normalized.startsWith('data:image/') && dataUrlSeparator != -1) {
+    normalized = normalized.substring(dataUrlSeparator + 1);
+  }
+  normalized = normalized.replaceAll(RegExp(r'\s+'), '');
+  final cacheKey = '${normalized.length}:${normalized.hashCode}';
+  if (_nutritionImageCache.containsKey(cacheKey)) {
+    return _nutritionImageCache[cacheKey];
+  }
+
+  Uint8List? decoded;
+  try {
+    decoded = base64Decode(normalized);
+  } on FormatException {
+    try {
+      decoded = base64Url.decode(base64Url.normalize(normalized));
+    } on FormatException {
+      decoded = null;
+    }
+  }
+  _nutritionImageCache[cacheKey] = decoded;
+  while (_nutritionImageCache.length > _nutritionImageCacheLimit) {
+    _nutritionImageCache.remove(_nutritionImageCache.keys.first);
+  }
+  return decoded;
 }
 
 int _parseInt(String value) {

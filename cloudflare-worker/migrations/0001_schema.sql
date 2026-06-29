@@ -125,6 +125,8 @@ create table if not exists nutrition_entries (
   calories integer not null default 0,
   protein real not null default 0,
   note text not null default '',
+  image_data text,
+  image_mime_type text,
   created_at text not null,
   updated_at text not null,
   created_by text not null,

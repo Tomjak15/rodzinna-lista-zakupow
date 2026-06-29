@@ -1178,6 +1178,8 @@ class AppState extends ChangeNotifier {
     double fat = 0,
     double carbs = 0,
     required String note,
+    String? imageData,
+    String? imageMimeType,
   }) async {
     final family = _data.family;
     final member = _data.currentMember;
@@ -1197,6 +1199,8 @@ class AppState extends ChangeNotifier {
       fat: max(0, fat),
       carbs: max(0, carbs),
       note: note.trim(),
+      imageData: nullableString(imageData),
+      imageMimeType: nullableString(imageMimeType),
       createdAt: now,
       updatedAt: now,
       createdBy: member.id,
@@ -1213,6 +1217,8 @@ class AppState extends ChangeNotifier {
     required DateTime date,
     required Recipe recipe,
     required double servingPercent,
+    String? imageData,
+    String? imageMimeType,
   }) async {
     final multiplier = max(0.0, servingPercent) / 100;
     await addNutritionEntry(
@@ -1222,6 +1228,8 @@ class AppState extends ChangeNotifier {
       fat: recipe.fatPerServing * multiplier,
       carbs: recipe.carbsPerServing * multiplier,
       note: '${recipe.name} (${_formatNumber(servingPercent)}% porcji)',
+      imageData: imageData,
+      imageMimeType: imageMimeType,
     );
   }
 

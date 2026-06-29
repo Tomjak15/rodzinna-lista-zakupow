@@ -1452,6 +1452,8 @@ class NutritionEntry {
     required this.fat,
     required this.carbs,
     required this.note,
+    this.imageData,
+    this.imageMimeType,
     required this.createdAt,
     required this.updatedAt,
     required this.createdBy,
@@ -1470,6 +1472,10 @@ class NutritionEntry {
       fat: doubleFromJson(json['fat']),
       carbs: doubleFromJson(json['carbs']),
       note: json['note']?.toString() ?? '',
+      imageData: nullableString(json['imageData'] ?? json['image_data']),
+      imageMimeType: nullableString(
+        json['imageMimeType'] ?? json['image_mime_type'],
+      ),
       createdAt: dateFromJson(json['createdAt'] ?? json['created_at']),
       updatedAt: dateFromJson(json['updatedAt'] ?? json['updated_at']),
       createdBy:
@@ -1490,6 +1496,8 @@ class NutritionEntry {
       fat: doubleFromJson(json['fat']),
       carbs: doubleFromJson(json['carbs']),
       note: json['note']?.toString() ?? '',
+      imageData: nullableString(json['image_data']),
+      imageMimeType: nullableString(json['image_mime_type']),
       createdAt: dateFromJson(json['created_at']),
       updatedAt: dateFromJson(json['updated_at']),
       createdBy: json['created_by']?.toString() ?? '',
@@ -1507,6 +1515,8 @@ class NutritionEntry {
   final double fat;
   final double carbs;
   final String note;
+  final String? imageData;
+  final String? imageMimeType;
   final DateTime createdAt;
   final DateTime updatedAt;
   final String createdBy;
@@ -1524,6 +1534,8 @@ class NutritionEntry {
       'fat': fat,
       'carbs': carbs,
       'note': note,
+      'imageData': imageData,
+      'imageMimeType': imageMimeType,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'createdBy': createdBy,
@@ -1543,6 +1555,8 @@ class NutritionEntry {
       'fat': fat,
       'carbs': carbs,
       'note': note,
+      'image_data': imageData,
+      'image_mime_type': imageMimeType,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
       'created_by': createdBy,
@@ -1560,6 +1574,8 @@ class NutritionEntry {
     double? fat,
     double? carbs,
     String? note,
+    String? imageData,
+    String? imageMimeType,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? createdBy,
@@ -1576,6 +1592,8 @@ class NutritionEntry {
       fat: fat ?? this.fat,
       carbs: carbs ?? this.carbs,
       note: note ?? this.note,
+      imageData: imageData ?? this.imageData,
+      imageMimeType: imageMimeType ?? this.imageMimeType,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       createdBy: createdBy ?? this.createdBy,

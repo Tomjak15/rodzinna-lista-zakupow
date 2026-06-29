@@ -1,4 +1,4 @@
-const schemaVersion = 7;
+const schemaVersion = 8;
 const defaultWorkersAiTextModel = "@cf/mistralai/mistral-small-3.1-24b-instruct";
 const defaultWorkersAiVisionModel = "@cf/meta/llama-3.2-11b-vision-instruct";
 const fallbackWorkersAiVisionModel = "@cf/llava-hf/llava-1.5-7b-hf";
@@ -175,6 +175,8 @@ const tables = {
       "fat",
       "carbs",
       "note",
+      "image_data",
+      "image_mime_type",
       "created_at",
       "updated_at",
       "created_by",
@@ -570,7 +572,9 @@ function defaultMissingValue(table, config, column) {
   if (
     column === "parent_recipe_id" ||
     column === "member_id" ||
-    column === "category"
+    column === "category" ||
+    column === "image_data" ||
+    column === "image_mime_type"
   ) {
     return null;
   }
