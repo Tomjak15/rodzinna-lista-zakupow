@@ -1117,6 +1117,12 @@ class AppState extends ChangeNotifier {
     required double dailyProtein,
     double dailyFat = 0,
     double dailyCarbs = 0,
+    int dailySteps = 0,
+    int dailyTrainingMinutes = 0,
+    int weeklyTrainingMinutes = 0,
+    int weeklyTrainingCount = 0,
+    int weeklySteps = 0,
+    double weeklyDistanceKm = 0,
   }) async {
     final family = _data.family;
     final member = _data.currentMember;
@@ -1145,6 +1151,12 @@ class AppState extends ChangeNotifier {
             dailyProtein: max(0, dailyProtein).toDouble(),
             dailyFat: max(0, dailyFat).toDouble(),
             dailyCarbs: max(0, dailyCarbs).toDouble(),
+            dailySteps: max(0, dailySteps),
+            dailyTrainingMinutes: max(0, dailyTrainingMinutes),
+            weeklyTrainingMinutes: max(0, weeklyTrainingMinutes),
+            weeklyTrainingCount: max(0, weeklyTrainingCount),
+            weeklySteps: max(0, weeklySteps),
+            weeklyDistanceKm: max(0, weeklyDistanceKm).toDouble(),
             createdAt: now,
             updatedAt: now,
             createdBy: member.id,
@@ -1164,6 +1176,12 @@ class AppState extends ChangeNotifier {
       dailyProtein: max(0, dailyProtein).toDouble(),
       dailyFat: max(0, dailyFat).toDouble(),
       dailyCarbs: max(0, dailyCarbs).toDouble(),
+      dailySteps: max(0, dailySteps),
+      dailyTrainingMinutes: max(0, dailyTrainingMinutes),
+      weeklyTrainingMinutes: max(0, weeklyTrainingMinutes),
+      weeklyTrainingCount: max(0, weeklyTrainingCount),
+      weeklySteps: max(0, weeklySteps),
+      weeklyDistanceKm: max(0, weeklyDistanceKm).toDouble(),
       updatedAt: now,
       syncStatus: SyncStatus.pending,
     );
@@ -1178,6 +1196,8 @@ class AppState extends ChangeNotifier {
     double fat = 0,
     double carbs = 0,
     required String note,
+    String mealType = 'Posilek',
+    bool isCheatMeal = false,
     String? imageData,
     String? imageMimeType,
   }) async {
@@ -1199,6 +1219,8 @@ class AppState extends ChangeNotifier {
       fat: max(0, fat),
       carbs: max(0, carbs),
       note: note.trim(),
+      mealType: mealType.trim().isEmpty ? 'Posilek' : mealType.trim(),
+      isCheatMeal: isCheatMeal,
       imageData: nullableString(imageData),
       imageMimeType: nullableString(imageMimeType),
       createdAt: now,
@@ -1217,6 +1239,8 @@ class AppState extends ChangeNotifier {
     required DateTime date,
     required Recipe recipe,
     required double servingPercent,
+    String? mealType,
+    bool isCheatMeal = false,
     String? imageData,
     String? imageMimeType,
   }) async {
@@ -1228,6 +1252,10 @@ class AppState extends ChangeNotifier {
       fat: recipe.fatPerServing * multiplier,
       carbs: recipe.carbsPerServing * multiplier,
       note: '${recipe.name} (${_formatNumber(servingPercent)}% porcji)',
+      mealType: mealType?.trim().isNotEmpty == true
+          ? mealType!.trim()
+          : recipe.category,
+      isCheatMeal: isCheatMeal,
       imageData: imageData,
       imageMimeType: imageMimeType,
     );
@@ -1255,12 +1283,16 @@ class AppState extends ChangeNotifier {
     String? memberId,
     required DateTime date,
     required int durationMinutes,
+    int steps = 0,
+    double distanceKm = 0,
     required String activity,
     required String note,
   }) async {
     final family = _data.family;
     final member = _data.currentMember;
-    if (family == null || member == null || durationMinutes <= 0) {
+    if (family == null ||
+        member == null ||
+        (durationMinutes <= 0 && steps <= 0 && distanceKm <= 0)) {
       return;
     }
     final targetMemberId = memberId ?? member.id;
@@ -1277,6 +1309,8 @@ class AppState extends ChangeNotifier {
       date: _dateOnlyUtc(date),
       activity: activity.trim().isEmpty ? 'Trening' : activity.trim(),
       durationMinutes: max(0, durationMinutes),
+      steps: max(0, steps),
+      distanceKm: max(0, distanceKm).toDouble(),
       note: note.trim(),
       createdAt: now,
       updatedAt: now,

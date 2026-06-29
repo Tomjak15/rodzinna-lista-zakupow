@@ -166,6 +166,12 @@ const tables = {
       "daily_protein",
       "daily_fat",
       "daily_carbs",
+      "daily_steps",
+      "daily_training_minutes",
+      "weekly_training_minutes",
+      "weekly_training_count",
+      "weekly_steps",
+      "weekly_distance_km",
       "created_at",
       "updated_at",
       "created_by",
@@ -177,6 +183,12 @@ const tables = {
       "daily_protein",
       "daily_fat",
       "daily_carbs",
+      "daily_steps",
+      "daily_training_minutes",
+      "weekly_training_minutes",
+      "weekly_training_count",
+      "weekly_steps",
+      "weekly_distance_km",
     ],
   },
   nutrition_entries: {
@@ -190,6 +202,8 @@ const tables = {
       "fat",
       "carbs",
       "note",
+      "meal_type",
+      "is_cheat_meal",
       "image_data",
       "image_mime_type",
       "created_at",
@@ -197,7 +211,7 @@ const tables = {
       "created_by",
       "is_deleted",
     ],
-    boolColumns: ["is_deleted"],
+    boolColumns: ["is_cheat_meal", "is_deleted"],
     numberColumns: ["calories", "protein", "fat", "carbs"],
   },
   training_entries: {
@@ -208,6 +222,8 @@ const tables = {
       "training_date",
       "activity",
       "duration_minutes",
+      "steps",
+      "distance_km",
       "note",
       "created_at",
       "updated_at",
@@ -215,7 +231,7 @@ const tables = {
       "is_deleted",
     ],
     boolColumns: ["is_deleted"],
-    numberColumns: ["duration_minutes"],
+    numberColumns: ["duration_minutes", "steps", "distance_km"],
   },
   favorite_products: {
     columns: [
@@ -263,7 +279,7 @@ app.get("/", (_req, res) => {
   res.json({
     name: "Rodzinna Lista Zakupów API",
     status: "ok",
-    schemaVersion: 8,
+    schemaVersion: 9,
     health: "/api/health",
   });
 });
@@ -278,7 +294,7 @@ app.get("/api/health", (_req, res) => {
 
   res.json({
     ok: missingTables.length === 0,
-    schemaVersion: 8,
+    schemaVersion: 9,
     database: path.basename(dbPath),
     dbPath,
     expectedTables,
@@ -483,6 +499,12 @@ function initializeDatabase() {
       daily_protein real not null default 0,
       daily_fat real not null default 0,
       daily_carbs real not null default 0,
+      daily_steps integer not null default 0,
+      daily_training_minutes integer not null default 0,
+      weekly_training_minutes integer not null default 0,
+      weekly_training_count integer not null default 0,
+      weekly_steps integer not null default 0,
+      weekly_distance_km real not null default 0,
       created_at text not null,
       updated_at text not null,
       created_by text not null,
@@ -499,6 +521,8 @@ function initializeDatabase() {
       fat real not null default 0,
       carbs real not null default 0,
       note text not null default '',
+      meal_type text not null default 'Posilek',
+      is_cheat_meal integer not null default 0,
       image_data text,
       image_mime_type text,
       created_at text not null,
@@ -514,6 +538,8 @@ function initializeDatabase() {
       training_date text not null,
       activity text not null default 'Trening',
       duration_minutes integer not null default 0,
+      steps integer not null default 0,
+      distance_km real not null default 0,
       note text not null default '',
       created_at text not null,
       updated_at text not null,
@@ -582,10 +608,48 @@ function initializeDatabase() {
   ensureColumn("shopping_items", "category", "text");
   ensureColumn("nutrition_goals", "daily_fat", "real not null default 0");
   ensureColumn("nutrition_goals", "daily_carbs", "real not null default 0");
+  ensureColumn("nutrition_goals", "daily_steps", "integer not null default 0");
+  ensureColumn(
+    "nutrition_goals",
+    "daily_training_minutes",
+    "integer not null default 0",
+  );
+  ensureColumn(
+    "nutrition_goals",
+    "weekly_training_minutes",
+    "integer not null default 0",
+  );
+  ensureColumn(
+    "nutrition_goals",
+    "weekly_training_count",
+    "integer not null default 0",
+  );
+  ensureColumn(
+    "nutrition_goals",
+    "weekly_steps",
+    "integer not null default 0",
+  );
+  ensureColumn(
+    "nutrition_goals",
+    "weekly_distance_km",
+    "real not null default 0",
+  );
   ensureColumn("nutrition_entries", "fat", "real not null default 0");
   ensureColumn("nutrition_entries", "carbs", "real not null default 0");
+  ensureColumn(
+    "nutrition_entries",
+    "meal_type",
+    "text not null default 'Posilek'",
+  );
+  ensureColumn(
+    "nutrition_entries",
+    "is_cheat_meal",
+    "integer not null default 0",
+  );
   ensureColumn("nutrition_entries", "image_data", "text");
   ensureColumn("nutrition_entries", "image_mime_type", "text");
+  ensureColumn("training_entries", "steps", "integer not null default 0");
+  ensureColumn("training_entries", "distance_km", "real not null default 0");
   ensureColumn("receipts", "image_data", "text");
   ensureColumn("receipts", "image_mime_type", "text");
 }
@@ -672,6 +736,9 @@ function defaultMissingValue(table, config, column) {
   }
   if (column === "activity") {
     return "Trening";
+  }
+  if (column === "meal_type") {
+    return "Posilek";
   }
   if (column === "store_name") {
     return "Sklep";

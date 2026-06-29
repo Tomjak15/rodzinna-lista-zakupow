@@ -1,0 +1,10 @@
+alter table nutrition_goals add column daily_steps integer not null default 0;
+alter table nutrition_goals add column daily_training_minutes integer not null default 0;
+alter table nutrition_goals add column weekly_training_minutes integer not null default 0;
+alter table nutrition_goals add column weekly_training_count integer not null default 0;
+alter table nutrition_goals add column weekly_steps integer not null default 0;
+alter table nutrition_goals add column weekly_distance_km real not null default 0;
+alter table nutrition_entries add column meal_type text not null default 'Posilek';
+alter table nutrition_entries add column is_cheat_meal integer not null default 0;
+alter table training_entries add column steps integer not null default 0;
+alter table training_entries add column distance_km real not null default 0;

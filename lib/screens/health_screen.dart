@@ -19,6 +19,7 @@ class HealthScreen extends StatefulWidget {
 class _HealthScreenState extends State<HealthScreen> {
   DateTime _selectedDate = DateUtils.dateOnly(DateTime.now());
   String? _selectedMemberId;
+  _HistoryRange _historyRange = _HistoryRange.week;
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +39,12 @@ class _HealthScreenState extends State<HealthScreen> {
       );
     }
 
+    final memberNutritionEntries = appState.data.activeNutritionEntries
+        .where((entry) => entry.memberId == selectedMember.id)
+        .toList();
+    final memberTrainingEntries = appState.data.activeTrainingEntries
+        .where((entry) => entry.memberId == selectedMember.id)
+        .toList();
     final entries = appState
         .nutritionEntriesForDate(_selectedDate)
         .where((entry) => entry.memberId == selectedMember.id)
@@ -47,13 +54,27 @@ class _HealthScreenState extends State<HealthScreen> {
         .where((entry) => entry.memberId == selectedMember.id)
         .toList();
     final goal = appState.nutritionGoalForMember(selectedMember.id);
-    final calories = entries.fold<int>(0, (sum, entry) => sum + entry.calories);
-    final protein = entries.fold<double>(
-      0,
-      (sum, entry) => sum + entry.protein,
+    final daySummary = _daySummary(
+      date: _selectedDate,
+      entries: memberNutritionEntries,
+      trainingEntries: memberTrainingEntries,
+      goal: goal,
     );
-    final fat = entries.fold<double>(0, (sum, entry) => sum + entry.fat);
-    final carbs = entries.fold<double>(0, (sum, entry) => sum + entry.carbs);
+    final weekSummary = _weekSummary(
+      date: _selectedDate,
+      entries: memberNutritionEntries,
+      trainingEntries: memberTrainingEntries,
+      goal: goal,
+    );
+    final streak = _streakSummary(
+      entries: memberNutritionEntries,
+      trainingEntries: memberTrainingEntries,
+      goal: goal,
+    );
+    final achievements = _achievements(
+      streak: streak,
+      trainingEntries: memberTrainingEntries,
+    );
     final trainingMinutes = trainingEntries.fold<int>(
       0,
       (sum, entry) => sum + entry.durationMinutes,
@@ -78,16 +99,24 @@ class _HealthScreenState extends State<HealthScreen> {
           ),
           const SizedBox(height: 12),
         ],
+        _StreakCard(streak: streak, daySummary: daySummary),
+        const SizedBox(height: 12),
         _GoalCard(
           member: selectedMember,
-          calories: calories,
-          protein: protein,
-          fat: fat,
-          carbs: carbs,
+          calories: daySummary.goalCalories,
+          protein: daySummary.goalProtein,
+          fat: daySummary.goalFat,
+          carbs: daySummary.goalCarbs,
           goal: goal,
           canEditGoal: appState.isFamilyCreator,
           onEditGoal: () => _openGoalDialog(selectedMember, goal),
         ),
+        const SizedBox(height: 12),
+        _GoalDetailsCard(summary: daySummary),
+        const SizedBox(height: 12),
+        _WeeklyProgressCard(summary: weekSummary),
+        const SizedBox(height: 12),
+        _WeeklyChartCard(summary: weekSummary),
         const SizedBox(height: 12),
         _NutritionCard(
           entries: entries,
@@ -104,8 +133,45 @@ class _HealthScreenState extends State<HealthScreen> {
           onAdd: () => _openTrainingDialog(selectedMember),
           onDelete: appState.deleteTrainingEntry,
         ),
+        const SizedBox(height: 12),
+        _AchievementCard(achievements: achievements),
+        const SizedBox(height: 12),
+        _HistoryCard(
+          range: _historyRange,
+          entries: _historyNutritionEntries(memberNutritionEntries),
+          trainingEntries: _historyTrainingEntries(memberTrainingEntries),
+          onRangeChanged: (range) => setState(() => _historyRange = range),
+        ),
       ],
     );
+  }
+
+  List<NutritionEntry> _historyNutritionEntries(List<NutritionEntry> entries) {
+    final start = _rangeStart(_historyRange, _selectedDate);
+    final end = _rangeEnd(_historyRange, _selectedDate);
+    return entries
+        .where(
+          (entry) =>
+              (start == null || !entry.date.isBefore(start)) &&
+              (end == null ||
+                  entry.date.isBefore(end.add(const Duration(days: 1)))),
+        )
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+  }
+
+  List<TrainingEntry> _historyTrainingEntries(List<TrainingEntry> entries) {
+    final start = _rangeStart(_historyRange, _selectedDate);
+    final end = _rangeEnd(_historyRange, _selectedDate);
+    return entries
+        .where(
+          (entry) =>
+              (start == null || !entry.date.isBefore(start)) &&
+              (end == null ||
+                  entry.date.isBefore(end.add(const Duration(days: 1)))),
+        )
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
   }
 
   Member? _selectedVisibleMember(List<Member> members, Member? currentMember) {
@@ -142,6 +208,12 @@ class _HealthScreenState extends State<HealthScreen> {
         dailyProtein: draft.dailyProtein,
         dailyFat: draft.dailyFat,
         dailyCarbs: draft.dailyCarbs,
+        dailySteps: draft.dailySteps,
+        dailyTrainingMinutes: draft.dailyTrainingMinutes,
+        weeklyTrainingMinutes: draft.weeklyTrainingMinutes,
+        weeklyTrainingCount: draft.weeklyTrainingCount,
+        weeklySteps: draft.weeklySteps,
+        weeklyDistanceKm: draft.weeklyDistanceKm,
       );
     } catch (error) {
       if (!mounted) {
@@ -177,6 +249,8 @@ class _HealthScreenState extends State<HealthScreen> {
         date: _selectedDate,
         recipe: draft.recipe!,
         servingPercent: draft.servingPercent!,
+        mealType: draft.mealType,
+        isCheatMeal: draft.isCheatMeal,
         imageData: draft.imageData,
         imageMimeType: draft.imageMimeType,
       );
@@ -189,6 +263,8 @@ class _HealthScreenState extends State<HealthScreen> {
       fat: draft.fat,
       carbs: draft.carbs,
       note: draft.note,
+      mealType: draft.mealType,
+      isCheatMeal: draft.isCheatMeal,
       imageData: draft.imageData,
       imageMimeType: draft.imageMimeType,
     );
@@ -207,6 +283,8 @@ class _HealthScreenState extends State<HealthScreen> {
         memberId: member.id,
         date: _selectedDate,
         durationMinutes: draft.durationMinutes,
+        steps: draft.steps,
+        distanceKm: draft.distanceKm,
         activity: draft.activity,
         note: draft.note,
       );
@@ -445,6 +523,369 @@ class _GoalCard extends StatelessWidget {
   }
 }
 
+class _StreakCard extends StatelessWidget {
+  const _StreakCard({required this.streak, required this.daySummary});
+
+  final _StreakSummary streak;
+  final _HealthDaySummary daySummary;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: EdgeInsets.zero,
+      color: daySummary.isComplete
+          ? scheme.primaryContainer
+          : scheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: scheme.primary,
+              foregroundColor: scheme.onPrimary,
+              child: const Icon(Icons.local_fire_department),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${streak.current} dni passy',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  Text(
+                    daySummary.isComplete
+                        ? 'Dzien zaliczony. Rekord: ${streak.best}'
+                        : 'Dzisiaj wykonano ${daySummary.completedGoals}/${daySummary.totalGoals} celow',
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              width: 58,
+              height: 58,
+              child: CircularProgressIndicator(
+                value: daySummary.completion.clamp(0.0, 1.0),
+                strokeWidth: 7,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GoalDetailsCard extends StatelessWidget {
+  const _GoalDetailsCard({required this.summary});
+
+  final _HealthDaySummary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final checks = summary.checks.where((check) => check.enabled).toList();
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Cele na dzis',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            if (checks.isEmpty)
+              const _EmptyInfo(
+                icon: Icons.flag_outlined,
+                text: 'Brak ustawionych celow.',
+              )
+            else
+              ...checks.map((check) => _GoalCheckRow(check: check)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WeeklyProgressCard extends StatelessWidget {
+  const _WeeklyProgressCard({required this.summary});
+
+  final _HealthWeekSummary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final checks = summary.checks.where((check) => check.enabled).toList();
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Postep tygodniowy',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                Text(
+                  '${DateFormat('dd.MM').format(summary.weekStart)}-${DateFormat('dd.MM').format(summary.weekEnd)}',
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Raport: ${_number(summary.averageCalories)} kcal srednio, '
+              '${summary.trainingCount} treningow, '
+              '${summary.trainingMinutes} min, ${summary.steps} krokow, '
+              '${summary.goalDays}/7 dni z celem.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            if (checks.isEmpty)
+              const _EmptyInfo(
+                icon: Icons.calendar_view_week_outlined,
+                text: 'Ustaw cele tygodniowe.',
+              )
+            else
+              ...checks.map((check) => _GoalCheckRow(check: check)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WeeklyChartCard extends StatelessWidget {
+  const _WeeklyChartCard({required this.summary});
+
+  final _HealthWeekSummary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxCalories = max(
+      1,
+      summary.days.fold<int>(
+        0,
+        (maxValue, day) => max(maxValue, day.totalCalories),
+      ),
+    );
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Wykres tygodnia',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 140,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (final day in summary.days)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.bottomCenter,
+                                child: FractionallySizedBox(
+                                  heightFactor: day.totalCalories / maxCalories,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: day.isComplete
+                                          ? Theme.of(
+                                              context,
+                                            ).colorScheme.primary
+                                          : Theme.of(
+                                              context,
+                                            ).colorScheme.tertiaryContainer,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(_shortDayName(day.date)),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AchievementCard extends StatelessWidget {
+  const _AchievementCard({required this.achievements});
+
+  final List<_Achievement> achievements;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Osiagniecia', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            ...achievements.map(
+              (item) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(item.icon),
+                title: Text(
+                  item.done ? '${item.title} - zaliczone' : item.title,
+                ),
+                subtitle: LinearProgressIndicator(value: item.progress),
+                trailing: Text(
+                  '${_number(min(item.current, item.target))}/${_number(item.target)} ${item.unit}',
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HistoryCard extends StatelessWidget {
+  const _HistoryCard({
+    required this.range,
+    required this.entries,
+    required this.trainingEntries,
+    required this.onRangeChanged,
+  });
+
+  final _HistoryRange range;
+  final List<NutritionEntry> entries;
+  final List<TrainingEntry> trainingEntries;
+  final ValueChanged<_HistoryRange> onRangeChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Historia zdrowia',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                DropdownButton<_HistoryRange>(
+                  value: range,
+                  items: _HistoryRange.values
+                      .map(
+                        (value) => DropdownMenuItem(
+                          value: value,
+                          child: Text(value.label),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      onRangeChanged(value);
+                    }
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${entries.length} posilkow, ${trainingEntries.length} aktywnosci. Historia nie jest automatycznie usuwana.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            ...entries
+                .take(5)
+                .map(
+                  (entry) => _NutritionEntryTile(entry: entry, onDelete: null),
+                ),
+            ...trainingEntries
+                .take(5)
+                .map(
+                  (entry) => _TrainingEntryTile(entry: entry, onDelete: null),
+                ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GoalCheckRow extends StatelessWidget {
+  const _GoalCheckRow({required this.check});
+
+  final _GoalCheck check;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = check.isDone
+        ? 'w marginesie'
+        : 'zostalo ${_number(check.remaining)} ${check.suffix}';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Icon(_goalIcon(check.label)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: Text(check.label)),
+                    Text('${(check.progress * 100).round()}%'),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                LinearProgressIndicator(value: check.progress.clamp(0.0, 1.0)),
+                const SizedBox(height: 4),
+                Text(
+                  '${_number(check.value)} / ${_number(check.goal)} ${check.suffix} - $status (${check.rangeText})',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _NutritionCard extends StatelessWidget {
   const _NutritionCard({
     required this.entries,
@@ -634,6 +1075,11 @@ class _NutritionEntryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasPhoto = _decodeNutritionImage(entry.imageData) != null;
+    final details = <String>[
+      entry.mealType,
+      if (entry.isCheatMeal) 'wyjatkowy posilek',
+      if (entry.note.isNotEmpty) entry.note,
+    ];
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: _NutritionPhotoThumb(
@@ -645,7 +1091,7 @@ class _NutritionEntryTile extends StatelessWidget {
         '${entry.calories} kcal, ${_number(entry.protein)} g białka, '
         '${_number(entry.fat)} g tł., ${_number(entry.carbs)} g węgli',
       ),
-      subtitle: entry.note.isEmpty ? null : Text(entry.note),
+      subtitle: details.isEmpty ? null : Text(details.join(' - ')),
       trailing: IconButton(
         tooltip: 'Usuń',
         onPressed: onDelete == null ? null : () => onDelete!(entry),
@@ -746,10 +1192,19 @@ class _TrainingEntryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final details = <String>[
+      if (entry.durationMinutes > 0) '${entry.durationMinutes} min',
+      if (entry.steps > 0) '${entry.steps} krokow',
+      if (entry.distanceKm > 0) '${_number(entry.distanceKm)} km',
+    ];
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: const Icon(Icons.monitor_heart_outlined),
-      title: Text('${entry.activity} - ${entry.durationMinutes} min'),
+      title: Text(
+        details.isEmpty
+            ? entry.activity
+            : '${entry.activity} - ${details.join(', ')}',
+      ),
       subtitle: entry.note.isEmpty ? null : Text(entry.note),
       trailing: IconButton(
         tooltip: 'Usuń',
@@ -796,6 +1251,12 @@ class _NutritionGoalDialogState extends State<_NutritionGoalDialog> {
   late final TextEditingController _proteinController;
   late final TextEditingController _fatController;
   late final TextEditingController _carbsController;
+  late final TextEditingController _stepsController;
+  late final TextEditingController _dailyTrainingController;
+  late final TextEditingController _weeklyTrainingMinutesController;
+  late final TextEditingController _weeklyTrainingCountController;
+  late final TextEditingController _weeklyStepsController;
+  late final TextEditingController _weeklyDistanceController;
 
   @override
   void initState() {
@@ -812,6 +1273,30 @@ class _NutritionGoalDialogState extends State<_NutritionGoalDialog> {
     _carbsController = TextEditingController(
       text: widget.goal == null ? '250' : _number(widget.goal!.dailyCarbs),
     );
+    _stepsController = TextEditingController(
+      text: widget.goal == null ? '8000' : widget.goal!.dailySteps.toString(),
+    );
+    _dailyTrainingController = TextEditingController(
+      text: widget.goal == null
+          ? '30'
+          : widget.goal!.dailyTrainingMinutes.toString(),
+    );
+    _weeklyTrainingMinutesController = TextEditingController(
+      text: widget.goal == null
+          ? '300'
+          : widget.goal!.weeklyTrainingMinutes.toString(),
+    );
+    _weeklyTrainingCountController = TextEditingController(
+      text: widget.goal == null
+          ? '5'
+          : widget.goal!.weeklyTrainingCount.toString(),
+    );
+    _weeklyStepsController = TextEditingController(
+      text: widget.goal == null ? '60000' : widget.goal!.weeklySteps.toString(),
+    );
+    _weeklyDistanceController = TextEditingController(
+      text: widget.goal == null ? '0' : _number(widget.goal!.weeklyDistanceKm),
+    );
   }
 
   @override
@@ -820,6 +1305,12 @@ class _NutritionGoalDialogState extends State<_NutritionGoalDialog> {
     _proteinController.dispose();
     _fatController.dispose();
     _carbsController.dispose();
+    _stepsController.dispose();
+    _dailyTrainingController.dispose();
+    _weeklyTrainingMinutesController.dispose();
+    _weeklyTrainingCountController.dispose();
+    _weeklyStepsController.dispose();
+    _weeklyDistanceController.dispose();
     super.dispose();
   }
 
@@ -874,6 +1365,78 @@ class _NutritionGoalDialogState extends State<_NutritionGoalDialog> {
                   suffixText: 'g',
                 ),
               ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Cele ruchu',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _stepsController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Kroki dziennie',
+                  suffixText: 'krokow',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _dailyTrainingController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Minuty treningu dziennie',
+                  suffixText: 'min',
+                ),
+              ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Cele tygodniowe',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _weeklyTrainingMinutesController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Minuty treningu tygodniowo',
+                  suffixText: 'min',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _weeklyTrainingCountController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Treningi tygodniowo',
+                  suffixText: 'x',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _weeklyStepsController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Kroki tygodniowo',
+                  suffixText: 'krokow',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _weeklyDistanceController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Dystans tygodniowo',
+                  suffixText: 'km',
+                ),
+              ),
             ],
           ),
         ),
@@ -893,6 +1456,14 @@ class _NutritionGoalDialogState extends State<_NutritionGoalDialog> {
     final protein = _parseDouble(_proteinController.text);
     final fat = _parseDouble(_fatController.text);
     final carbs = _parseDouble(_carbsController.text);
+    final steps = _parseInt(_stepsController.text);
+    final dailyTraining = _parseInt(_dailyTrainingController.text);
+    final weeklyTrainingMinutes = _parseInt(
+      _weeklyTrainingMinutesController.text,
+    );
+    final weeklyTrainingCount = _parseInt(_weeklyTrainingCountController.text);
+    final weeklySteps = _parseInt(_weeklyStepsController.text);
+    final weeklyDistance = _parseDouble(_weeklyDistanceController.text);
     Navigator.pop(
       context,
       _NutritionGoalDraft(
@@ -900,6 +1471,12 @@ class _NutritionGoalDialogState extends State<_NutritionGoalDialog> {
         dailyProtein: protein,
         dailyFat: fat,
         dailyCarbs: carbs,
+        dailySteps: steps,
+        dailyTrainingMinutes: dailyTraining,
+        weeklyTrainingMinutes: weeklyTrainingMinutes,
+        weeklyTrainingCount: weeklyTrainingCount,
+        weeklySteps: weeklySteps,
+        weeklyDistanceKm: weeklyDistance,
       ),
     );
   }
@@ -923,9 +1500,11 @@ class _NutritionEntryDialogState extends State<_NutritionEntryDialog> {
   final _noteController = TextEditingController();
   final _percentController = TextEditingController(text: '100');
   int _mode = 0;
+  String _mealType = 'Posilek';
   String? _recipeId;
   String? _imageData;
   String? _imageMimeType;
+  bool _isCheatMeal = false;
   bool _pickingPhoto = false;
 
   @override
@@ -980,6 +1559,51 @@ class _NutritionEntryDialogState extends State<_NutritionEntryDialog> {
                 ),
                 const SizedBox(height: 12),
               ],
+              DropdownButtonFormField<String>(
+                value: _mealType,
+                decoration: const InputDecoration(
+                  labelText: 'Typ posilku',
+                  prefixIcon: Icon(Icons.restaurant_outlined),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'Sniadanie',
+                    child: Text('Sniadanie'),
+                  ),
+                  DropdownMenuItem(value: 'Obiad', child: Text('Obiad')),
+                  DropdownMenuItem(value: 'Kolacja', child: Text('Kolacja')),
+                  DropdownMenuItem(
+                    value: 'Przekaska',
+                    child: Text('Przekaska'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Po treningu',
+                    child: Text('Po treningu'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Posilek',
+                    child: Text('Inny posilek'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _mealType = value);
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _isCheatMeal,
+                onChanged: (value) =>
+                    setState(() => _isCheatMeal = value ?? false),
+                title: const Text('Nie licz do celu'),
+                subtitle: const Text(
+                  'Wyjatkowy posilek zostaje w historii, ale nie przerywa passy.',
+                ),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              const SizedBox(height: 8),
               if (_mode == 1 && widget.recipes.isNotEmpty)
                 _RecipeNutritionPicker(
                   recipes: widget.recipes,
@@ -1067,6 +1691,8 @@ class _NutritionEntryDialogState extends State<_NutritionEntryDialog> {
           note: '',
           recipe: recipe,
           servingPercent: percent,
+          mealType: _mealType,
+          isCheatMeal: _isCheatMeal,
           imageData: _imageData,
           imageMimeType: _imageMimeType,
         ),
@@ -1081,6 +1707,8 @@ class _NutritionEntryDialogState extends State<_NutritionEntryDialog> {
         fat: _parseDouble(_fatController.text),
         carbs: _parseDouble(_carbsController.text),
         note: _noteController.text.trim(),
+        mealType: _mealType,
+        isCheatMeal: _isCheatMeal,
         imageData: _imageData,
         imageMimeType: _imageMimeType,
       ),
@@ -1277,12 +1905,16 @@ class _TrainingEntryDialog extends StatefulWidget {
 class _TrainingEntryDialogState extends State<_TrainingEntryDialog> {
   final _activityController = TextEditingController(text: 'Trening');
   final _durationController = TextEditingController();
+  final _stepsController = TextEditingController();
+  final _distanceController = TextEditingController();
   final _noteController = TextEditingController();
 
   @override
   void dispose() {
     _activityController.dispose();
     _durationController.dispose();
+    _stepsController.dispose();
+    _distanceController.dispose();
     _noteController.dispose();
     super.dispose();
   }
@@ -1291,29 +1923,54 @@ class _TrainingEntryDialogState extends State<_TrainingEntryDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text('Trening - ${widget.member.name}'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _activityController,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'Rodzaj treningu'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 430),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _activityController,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Rodzaj treningu'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _durationController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Czas',
+                  suffixText: 'min',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _stepsController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Kroki',
+                  suffixText: 'krokow',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _distanceController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Dystans',
+                  suffixText: 'km',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _noteController,
+                decoration: const InputDecoration(labelText: 'Notatka'),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _durationController,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Czas',
-              suffixText: 'min',
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _noteController,
-            decoration: const InputDecoration(labelText: 'Notatka'),
-          ),
-        ],
+        ),
       ),
       actions: [
         TextButton(
@@ -1331,6 +1988,8 @@ class _TrainingEntryDialogState extends State<_TrainingEntryDialog> {
       _TrainingEntryDraft(
         activity: _activityController.text.trim(),
         durationMinutes: _parseInt(_durationController.text),
+        steps: _parseInt(_stepsController.text),
+        distanceKm: _parseDouble(_distanceController.text),
         note: _noteController.text.trim(),
       ),
     );
@@ -1343,12 +2002,24 @@ class _NutritionGoalDraft {
     required this.dailyProtein,
     required this.dailyFat,
     required this.dailyCarbs,
+    required this.dailySteps,
+    required this.dailyTrainingMinutes,
+    required this.weeklyTrainingMinutes,
+    required this.weeklyTrainingCount,
+    required this.weeklySteps,
+    required this.weeklyDistanceKm,
   });
 
   final int dailyCalories;
   final double dailyProtein;
   final double dailyFat;
   final double dailyCarbs;
+  final int dailySteps;
+  final int dailyTrainingMinutes;
+  final int weeklyTrainingMinutes;
+  final int weeklyTrainingCount;
+  final int weeklySteps;
+  final double weeklyDistanceKm;
 }
 
 class _NutritionEntryDraft {
@@ -1358,6 +2029,8 @@ class _NutritionEntryDraft {
     required this.fat,
     required this.carbs,
     required this.note,
+    this.mealType = 'Posilek',
+    this.isCheatMeal = false,
     this.recipe,
     this.servingPercent,
     this.imageData,
@@ -1369,6 +2042,8 @@ class _NutritionEntryDraft {
   final double fat;
   final double carbs;
   final String note;
+  final String mealType;
+  final bool isCheatMeal;
   final Recipe? recipe;
   final double? servingPercent;
   final String? imageData;
@@ -1379,16 +2054,463 @@ class _TrainingEntryDraft {
   const _TrainingEntryDraft({
     required this.activity,
     required this.durationMinutes,
+    required this.steps,
+    required this.distanceKm,
     required this.note,
   });
 
   final String activity;
   final int durationMinutes;
+  final int steps;
+  final double distanceKm;
   final String note;
 }
 
 final _nutritionImageCache = <String, Uint8List?>{};
 const _nutritionImageCacheLimit = 24;
+
+class _GoalCheck {
+  const _GoalCheck({
+    required this.label,
+    required this.value,
+    required this.goal,
+    required this.suffix,
+    required this.allowOverTarget,
+  });
+
+  final String label;
+  final double value;
+  final double goal;
+  final String suffix;
+  final bool allowOverTarget;
+
+  bool get enabled => goal > 0;
+  double get lowerLimit => goal * 0.8;
+  double get upperLimit => goal * 1.2;
+  bool get isDone =>
+      !enabled ||
+      (value >= lowerLimit && (allowOverTarget || value <= upperLimit));
+  double get progress => !enabled ? 0 : (value / goal).clamp(0.0, 1.4);
+  double get remaining => max(0, lowerLimit - value).toDouble();
+  String get rangeText => allowOverTarget
+      ? 'min. ${_number(lowerLimit)} $suffix'
+      : '${_number(lowerLimit)}-${_number(upperLimit)} $suffix';
+}
+
+class _HealthDaySummary {
+  const _HealthDaySummary({
+    required this.date,
+    required this.totalCalories,
+    required this.totalProtein,
+    required this.totalFat,
+    required this.totalCarbs,
+    required this.goalCalories,
+    required this.goalProtein,
+    required this.goalFat,
+    required this.goalCarbs,
+    required this.steps,
+    required this.trainingMinutes,
+    required this.trainingCount,
+    required this.cheatMeals,
+    required this.checks,
+  });
+
+  final DateTime date;
+  final int totalCalories;
+  final double totalProtein;
+  final double totalFat;
+  final double totalCarbs;
+  final int goalCalories;
+  final double goalProtein;
+  final double goalFat;
+  final double goalCarbs;
+  final int steps;
+  final int trainingMinutes;
+  final int trainingCount;
+  final int cheatMeals;
+  final List<_GoalCheck> checks;
+
+  Iterable<_GoalCheck> get enabledChecks =>
+      checks.where((item) => item.enabled);
+  int get completedGoals => enabledChecks.where((item) => item.isDone).length;
+  int get totalGoals => enabledChecks.length;
+  bool get isComplete => totalGoals > 0 && completedGoals == totalGoals;
+  double get completion => totalGoals == 0 ? 0 : completedGoals / totalGoals;
+}
+
+class _HealthWeekSummary {
+  const _HealthWeekSummary({
+    required this.weekStart,
+    required this.weekEnd,
+    required this.trainingMinutes,
+    required this.trainingCount,
+    required this.steps,
+    required this.distanceKm,
+    required this.goalDays,
+    required this.averageCalories,
+    required this.averageProtein,
+    required this.checks,
+    required this.days,
+  });
+
+  final DateTime weekStart;
+  final DateTime weekEnd;
+  final int trainingMinutes;
+  final int trainingCount;
+  final int steps;
+  final double distanceKm;
+  final int goalDays;
+  final double averageCalories;
+  final double averageProtein;
+  final List<_GoalCheck> checks;
+  final List<_HealthDaySummary> days;
+
+  Iterable<_GoalCheck> get enabledChecks =>
+      checks.where((item) => item.enabled);
+  int get completedGoals => enabledChecks.where((item) => item.isDone).length;
+  int get totalGoals => enabledChecks.length;
+  double get completion => totalGoals == 0 ? 0 : completedGoals / totalGoals;
+}
+
+class _StreakSummary {
+  const _StreakSummary({
+    required this.current,
+    required this.best,
+    required this.completedDays,
+  });
+
+  final int current;
+  final int best;
+  final Set<String> completedDays;
+}
+
+class _Achievement {
+  const _Achievement({
+    required this.title,
+    required this.icon,
+    required this.current,
+    required this.target,
+    required this.unit,
+  });
+
+  final String title;
+  final IconData icon;
+  final double current;
+  final double target;
+  final String unit;
+
+  bool get done => current >= target;
+  double get progress => target <= 0 ? 0 : (current / target).clamp(0.0, 1.0);
+}
+
+_HealthDaySummary _daySummary({
+  required DateTime date,
+  required List<NutritionEntry> entries,
+  required List<TrainingEntry> trainingEntries,
+  required NutritionGoal? goal,
+}) {
+  final day = DateUtils.dateOnly(date);
+  final dayEntries = entries
+      .where((entry) => DateUtils.isSameDay(entry.date, day))
+      .toList();
+  final countedEntries = dayEntries
+      .where((entry) => !entry.isCheatMeal)
+      .toList();
+  final dayTraining = trainingEntries
+      .where((entry) => DateUtils.isSameDay(entry.date, day))
+      .toList();
+
+  final totalCalories = dayEntries.fold<int>(
+    0,
+    (sum, entry) => sum + entry.calories,
+  );
+  final totalProtein = dayEntries.fold<double>(
+    0,
+    (sum, entry) => sum + entry.protein,
+  );
+  final totalFat = dayEntries.fold<double>(0, (sum, entry) => sum + entry.fat);
+  final totalCarbs = dayEntries.fold<double>(
+    0,
+    (sum, entry) => sum + entry.carbs,
+  );
+  final goalCalories = countedEntries.fold<int>(
+    0,
+    (sum, entry) => sum + entry.calories,
+  );
+  final goalProtein = countedEntries.fold<double>(
+    0,
+    (sum, entry) => sum + entry.protein,
+  );
+  final goalFat = countedEntries.fold<double>(
+    0,
+    (sum, entry) => sum + entry.fat,
+  );
+  final goalCarbs = countedEntries.fold<double>(
+    0,
+    (sum, entry) => sum + entry.carbs,
+  );
+  final steps = dayTraining.fold<int>(0, (sum, entry) => sum + entry.steps);
+  final trainingMinutes = dayTraining.fold<int>(
+    0,
+    (sum, entry) => sum + entry.durationMinutes,
+  );
+
+  return _HealthDaySummary(
+    date: day,
+    totalCalories: totalCalories,
+    totalProtein: totalProtein,
+    totalFat: totalFat,
+    totalCarbs: totalCarbs,
+    goalCalories: goalCalories,
+    goalProtein: goalProtein,
+    goalFat: goalFat,
+    goalCarbs: goalCarbs,
+    steps: steps,
+    trainingMinutes: trainingMinutes,
+    trainingCount: dayTraining.length,
+    cheatMeals: dayEntries.where((entry) => entry.isCheatMeal).length,
+    checks: [
+      _GoalCheck(
+        label: 'Kcal',
+        value: goalCalories.toDouble(),
+        goal: (goal?.dailyCalories ?? 0).toDouble(),
+        suffix: 'kcal',
+        allowOverTarget: false,
+      ),
+      _GoalCheck(
+        label: 'Bialko',
+        value: goalProtein,
+        goal: goal?.dailyProtein ?? 0,
+        suffix: 'g',
+        allowOverTarget: false,
+      ),
+      _GoalCheck(
+        label: 'Tluszcze',
+        value: goalFat,
+        goal: goal?.dailyFat ?? 0,
+        suffix: 'g',
+        allowOverTarget: false,
+      ),
+      _GoalCheck(
+        label: 'Weglowodany',
+        value: goalCarbs,
+        goal: goal?.dailyCarbs ?? 0,
+        suffix: 'g',
+        allowOverTarget: false,
+      ),
+      _GoalCheck(
+        label: 'Kroki',
+        value: steps.toDouble(),
+        goal: (goal?.dailySteps ?? 0).toDouble(),
+        suffix: 'krokow',
+        allowOverTarget: true,
+      ),
+      _GoalCheck(
+        label: 'Minuty treningu',
+        value: trainingMinutes.toDouble(),
+        goal: (goal?.dailyTrainingMinutes ?? 0).toDouble(),
+        suffix: 'min',
+        allowOverTarget: true,
+      ),
+    ],
+  );
+}
+
+_HealthWeekSummary _weekSummary({
+  required DateTime date,
+  required List<NutritionEntry> entries,
+  required List<TrainingEntry> trainingEntries,
+  required NutritionGoal? goal,
+}) {
+  final start = _weekStart(date);
+  final end = start.add(const Duration(days: 6));
+  final days = List.generate(
+    7,
+    (index) => _daySummary(
+      date: start.add(Duration(days: index)),
+      entries: entries,
+      trainingEntries: trainingEntries,
+      goal: goal,
+    ),
+  );
+  final weekTraining = trainingEntries
+      .where(
+        (entry) =>
+            !entry.date.isBefore(start) &&
+            entry.date.isBefore(end.add(const Duration(days: 1))),
+      )
+      .toList();
+  final trainingMinutes = weekTraining.fold<int>(
+    0,
+    (sum, entry) => sum + entry.durationMinutes,
+  );
+  final steps = weekTraining.fold<int>(0, (sum, entry) => sum + entry.steps);
+  final distanceKm = weekTraining.fold<double>(
+    0,
+    (sum, entry) => sum + entry.distanceKm,
+  );
+  final averageCalories =
+      days.fold<double>(0, (sum, day) => sum + day.totalCalories) / 7;
+  final averageProtein =
+      days.fold<double>(0, (sum, day) => sum + day.totalProtein) / 7;
+
+  return _HealthWeekSummary(
+    weekStart: start,
+    weekEnd: end,
+    trainingMinutes: trainingMinutes,
+    trainingCount: weekTraining.length,
+    steps: steps,
+    distanceKm: distanceKm,
+    goalDays: days.where((day) => day.isComplete).length,
+    averageCalories: averageCalories,
+    averageProtein: averageProtein,
+    days: days,
+    checks: [
+      _GoalCheck(
+        label: 'Minuty treningu',
+        value: trainingMinutes.toDouble(),
+        goal: (goal?.weeklyTrainingMinutes ?? 0).toDouble(),
+        suffix: 'min',
+        allowOverTarget: true,
+      ),
+      _GoalCheck(
+        label: 'Treningi',
+        value: weekTraining.length.toDouble(),
+        goal: (goal?.weeklyTrainingCount ?? 0).toDouble(),
+        suffix: 'x',
+        allowOverTarget: true,
+      ),
+      _GoalCheck(
+        label: 'Kroki',
+        value: steps.toDouble(),
+        goal: (goal?.weeklySteps ?? 0).toDouble(),
+        suffix: 'krokow',
+        allowOverTarget: true,
+      ),
+      _GoalCheck(
+        label: 'Dystans',
+        value: distanceKm,
+        goal: goal?.weeklyDistanceKm ?? 0,
+        suffix: 'km',
+        allowOverTarget: true,
+      ),
+    ],
+  );
+}
+
+_StreakSummary _streakSummary({
+  required List<NutritionEntry> entries,
+  required List<TrainingEntry> trainingEntries,
+  required NutritionGoal? goal,
+}) {
+  if (goal == null) {
+    return const _StreakSummary(current: 0, best: 0, completedDays: {});
+  }
+  final dates = <DateTime>[
+    ...entries.map((entry) => DateUtils.dateOnly(entry.date)),
+    ...trainingEntries.map((entry) => DateUtils.dateOnly(entry.date)),
+    DateUtils.dateOnly(DateTime.now()),
+  ]..sort();
+  if (dates.isEmpty) {
+    return const _StreakSummary(current: 0, best: 0, completedDays: {});
+  }
+  final first = dates.first;
+  final today = DateUtils.dateOnly(DateTime.now());
+  final completed = <String>{};
+  var currentRun = 0;
+  var bestRun = 0;
+  for (
+    var date = first;
+    !date.isAfter(today);
+    date = date.add(const Duration(days: 1))
+  ) {
+    final summary = _daySummary(
+      date: date,
+      entries: entries,
+      trainingEntries: trainingEntries,
+      goal: goal,
+    );
+    if (summary.isComplete) {
+      currentRun++;
+      bestRun = max(bestRun, currentRun);
+      completed.add(_dateKey(date));
+    } else {
+      currentRun = 0;
+    }
+  }
+
+  var current = 0;
+  for (var date = today; ; date = date.subtract(const Duration(days: 1))) {
+    if (!completed.contains(_dateKey(date))) {
+      break;
+    }
+    current++;
+  }
+  return _StreakSummary(
+    current: current,
+    best: bestRun,
+    completedDays: completed,
+  );
+}
+
+List<_Achievement> _achievements({
+  required _StreakSummary streak,
+  required List<TrainingEntry> trainingEntries,
+}) {
+  final trainings = trainingEntries.length.toDouble();
+  final minutes = trainingEntries.fold<double>(
+    0,
+    (sum, entry) => sum + entry.durationMinutes,
+  );
+  final distance = trainingEntries.fold<double>(
+    0,
+    (sum, entry) => sum + entry.distanceKm,
+  );
+  return [
+    _Achievement(
+      title: 'Pierwszy trening',
+      icon: Icons.fitness_center,
+      current: trainings,
+      target: 1,
+      unit: 'trening',
+    ),
+    _Achievement(
+      title: '7 dni passy',
+      icon: Icons.local_fire_department,
+      current: streak.best.toDouble(),
+      target: 7,
+      unit: 'dni',
+    ),
+    _Achievement(
+      title: '30 dni passy',
+      icon: Icons.emoji_events_outlined,
+      current: streak.best.toDouble(),
+      target: 30,
+      unit: 'dni',
+    ),
+    _Achievement(
+      title: '100 treningow',
+      icon: Icons.workspace_premium_outlined,
+      current: trainings,
+      target: 100,
+      unit: 'treningow',
+    ),
+    _Achievement(
+      title: '100 km',
+      icon: Icons.directions_run,
+      current: distance,
+      target: 100,
+      unit: 'km',
+    ),
+    _Achievement(
+      title: '1000 minut treningu',
+      icon: Icons.timer_outlined,
+      current: minutes,
+      target: 1000,
+      unit: 'min',
+    ),
+  ];
+}
 
 Uint8List? _decodeNutritionImage(String? imageData) {
   var normalized = imageData?.trim();
@@ -1444,4 +2566,58 @@ String _shortDayName(DateTime date) {
 
 String _fullDate(DateTime date) {
   return DateFormat('dd.MM.yyyy').format(date);
+}
+
+DateTime _weekStart(DateTime date) {
+  final day = DateUtils.dateOnly(date);
+  return day.subtract(Duration(days: day.weekday - DateTime.monday));
+}
+
+String _dateKey(DateTime date) {
+  return DateFormat('yyyy-MM-dd').format(DateUtils.dateOnly(date));
+}
+
+DateTime? _rangeStart(_HistoryRange range, DateTime date) {
+  final day = DateUtils.dateOnly(date);
+  return switch (range) {
+    _HistoryRange.week => _weekStart(day),
+    _HistoryRange.month => DateTime(day.year, day.month),
+    _HistoryRange.year => DateTime(day.year),
+    _HistoryRange.all => null,
+  };
+}
+
+DateTime? _rangeEnd(_HistoryRange range, DateTime date) {
+  final day = DateUtils.dateOnly(date);
+  return switch (range) {
+    _HistoryRange.week => _weekStart(day).add(const Duration(days: 6)),
+    _HistoryRange.month => DateTime(day.year, day.month + 1, 0),
+    _HistoryRange.year => DateTime(day.year, 12, 31),
+    _HistoryRange.all => null,
+  };
+}
+
+IconData _goalIcon(String label) {
+  return switch (label) {
+    'Kcal' => Icons.local_fire_department_outlined,
+    'Bialko' => Icons.fitness_center,
+    'Tluszcze' => Icons.water_drop_outlined,
+    'Weglowodany' => Icons.grain_outlined,
+    'Kroki' => Icons.directions_walk,
+    'Minuty treningu' => Icons.timer_outlined,
+    'Treningi' => Icons.monitor_heart_outlined,
+    'Dystans' => Icons.directions_run,
+    _ => Icons.flag_outlined,
+  };
+}
+
+enum _HistoryRange {
+  week('Tydzien'),
+  month('Miesiac'),
+  year('Rok'),
+  all('Cala historia');
+
+  const _HistoryRange(this.label);
+
+  final String label;
 }

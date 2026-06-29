@@ -43,6 +43,12 @@ void main() {
       dailyProtein: 140,
       dailyFat: 80,
       dailyCarbs: 260,
+      dailySteps: 9000,
+      dailyTrainingMinutes: 30,
+      weeklyTrainingMinutes: 300,
+      weeklyTrainingCount: 5,
+      weeklySteps: 60000,
+      weeklyDistanceKm: 20,
     );
     await appState.saveNutritionGoal(
       memberId: anna.id,
@@ -58,11 +64,15 @@ void main() {
       fat: 18,
       carbs: 74,
       note: 'Obiad',
+      mealType: 'Obiad',
+      isCheatMeal: true,
     );
     await appState.addTrainingEntry(
       memberId: anna.id,
       date: DateTime(2026, 6, 21),
       durationMinutes: 45,
+      steps: 6200,
+      distanceKm: 5.5,
       activity: 'Silownia',
       note: 'Nogi',
     );
@@ -71,6 +81,23 @@ void main() {
     expect(appState.nutritionGoalForMember(anna.id)!.dailyProtein, 90);
     expect(appState.nutritionGoalForMember(memberId)!.dailyFat, 80);
     expect(appState.nutritionGoalForMember(anna.id)!.dailyCarbs, 180);
+    expect(appState.nutritionGoalForMember(memberId)!.dailySteps, 9000);
+    expect(
+      appState
+          .nutritionGoalForMember(memberId)!
+          .toRemote()['weekly_training_minutes'],
+      300,
+    );
+    expect(
+      appState.nutritionGoalForMember(memberId)!.toRemote()['weekly_steps'],
+      60000,
+    );
+    expect(
+      appState
+          .nutritionGoalForMember(memberId)!
+          .toRemote()['weekly_distance_km'],
+      20,
+    );
     expect(
       appState.nutritionEntriesForDate(DateTime(2026, 6, 21)),
       hasLength(1),
@@ -88,12 +115,34 @@ void main() {
       74,
     );
     expect(
+      appState
+          .nutritionEntriesForDate(DateTime(2026, 6, 21))
+          .single
+          .toRemote()['meal_type'],
+      'Obiad',
+    );
+    expect(
+      appState
+          .nutritionEntriesForDate(DateTime(2026, 6, 21))
+          .single
+          .toRemote()['is_cheat_meal'],
+      true,
+    );
+    expect(
       appState.trainingEntriesForDate(DateTime(2026, 6, 21)),
       hasLength(1),
     );
     expect(
       appState.trainingEntriesForDate(DateTime(2026, 6, 21)).single.toRemote(),
       containsPair('duration_minutes', 45),
+    );
+    expect(
+      appState.trainingEntriesForDate(DateTime(2026, 6, 21)).single.toRemote(),
+      containsPair('steps', 6200),
+    );
+    expect(
+      appState.trainingEntriesForDate(DateTime(2026, 6, 21)).single.toRemote(),
+      containsPair('distance_km', 5.5),
     );
   });
 
@@ -161,6 +210,8 @@ void main() {
       date: DateTime(2026, 6, 21),
       recipe: recipe,
       servingPercent: 80,
+      mealType: 'Obiad',
+      isCheatMeal: true,
     );
 
     final entry = appState
@@ -171,6 +222,8 @@ void main() {
     expect(entry.fat, 16);
     expect(entry.carbs, 36);
     expect(entry.note, 'Kurczak z ryzem (80% porcji)');
+    expect(entry.mealType, 'Obiad');
+    expect(entry.isCheatMeal, true);
   });
 
   test('wpis zdrowia zapisuje zdjecie posilku do synchronizacji', () async {

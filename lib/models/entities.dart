@@ -1318,6 +1318,12 @@ class NutritionGoal {
     required this.dailyProtein,
     required this.dailyFat,
     required this.dailyCarbs,
+    this.dailySteps = 0,
+    this.dailyTrainingMinutes = 0,
+    this.weeklyTrainingMinutes = 0,
+    this.weeklyTrainingCount = 0,
+    this.weeklySteps = 0,
+    this.weeklyDistanceKm = 0,
     required this.createdAt,
     required this.updatedAt,
     required this.createdBy,
@@ -1338,6 +1344,20 @@ class NutritionGoal {
       ),
       dailyFat: doubleFromJson(json['dailyFat'] ?? json['daily_fat']),
       dailyCarbs: doubleFromJson(json['dailyCarbs'] ?? json['daily_carbs']),
+      dailySteps: intFromJson(json['dailySteps'] ?? json['daily_steps']),
+      dailyTrainingMinutes: intFromJson(
+        json['dailyTrainingMinutes'] ?? json['daily_training_minutes'],
+      ),
+      weeklyTrainingMinutes: intFromJson(
+        json['weeklyTrainingMinutes'] ?? json['weekly_training_minutes'],
+      ),
+      weeklyTrainingCount: intFromJson(
+        json['weeklyTrainingCount'] ?? json['weekly_training_count'],
+      ),
+      weeklySteps: intFromJson(json['weeklySteps'] ?? json['weekly_steps']),
+      weeklyDistanceKm: doubleFromJson(
+        json['weeklyDistanceKm'] ?? json['weekly_distance_km'],
+      ),
       createdAt: dateFromJson(json['createdAt'] ?? json['created_at']),
       updatedAt: dateFromJson(json['updatedAt'] ?? json['updated_at']),
       createdBy:
@@ -1356,6 +1376,12 @@ class NutritionGoal {
       dailyProtein: doubleFromJson(json['daily_protein']),
       dailyFat: doubleFromJson(json['daily_fat']),
       dailyCarbs: doubleFromJson(json['daily_carbs']),
+      dailySteps: intFromJson(json['daily_steps']),
+      dailyTrainingMinutes: intFromJson(json['daily_training_minutes']),
+      weeklyTrainingMinutes: intFromJson(json['weekly_training_minutes']),
+      weeklyTrainingCount: intFromJson(json['weekly_training_count']),
+      weeklySteps: intFromJson(json['weekly_steps']),
+      weeklyDistanceKm: doubleFromJson(json['weekly_distance_km']),
       createdAt: dateFromJson(json['created_at']),
       updatedAt: dateFromJson(json['updated_at']),
       createdBy: json['created_by']?.toString() ?? '',
@@ -1371,6 +1397,12 @@ class NutritionGoal {
   final double dailyProtein;
   final double dailyFat;
   final double dailyCarbs;
+  final int dailySteps;
+  final int dailyTrainingMinutes;
+  final int weeklyTrainingMinutes;
+  final int weeklyTrainingCount;
+  final int weeklySteps;
+  final double weeklyDistanceKm;
   final DateTime createdAt;
   final DateTime updatedAt;
   final String createdBy;
@@ -1386,6 +1418,12 @@ class NutritionGoal {
       'dailyProtein': dailyProtein,
       'dailyFat': dailyFat,
       'dailyCarbs': dailyCarbs,
+      'dailySteps': dailySteps,
+      'dailyTrainingMinutes': dailyTrainingMinutes,
+      'weeklyTrainingMinutes': weeklyTrainingMinutes,
+      'weeklyTrainingCount': weeklyTrainingCount,
+      'weeklySteps': weeklySteps,
+      'weeklyDistanceKm': weeklyDistanceKm,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'createdBy': createdBy,
@@ -1403,6 +1441,12 @@ class NutritionGoal {
       'daily_protein': dailyProtein,
       'daily_fat': dailyFat,
       'daily_carbs': dailyCarbs,
+      'daily_steps': dailySteps,
+      'daily_training_minutes': dailyTrainingMinutes,
+      'weekly_training_minutes': weeklyTrainingMinutes,
+      'weekly_training_count': weeklyTrainingCount,
+      'weekly_steps': weeklySteps,
+      'weekly_distance_km': weeklyDistanceKm,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
       'created_by': createdBy,
@@ -1418,6 +1462,12 @@ class NutritionGoal {
     double? dailyProtein,
     double? dailyFat,
     double? dailyCarbs,
+    int? dailySteps,
+    int? dailyTrainingMinutes,
+    int? weeklyTrainingMinutes,
+    int? weeklyTrainingCount,
+    int? weeklySteps,
+    double? weeklyDistanceKm,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? createdBy,
@@ -1432,6 +1482,13 @@ class NutritionGoal {
       dailyProtein: dailyProtein ?? this.dailyProtein,
       dailyFat: dailyFat ?? this.dailyFat,
       dailyCarbs: dailyCarbs ?? this.dailyCarbs,
+      dailySteps: dailySteps ?? this.dailySteps,
+      dailyTrainingMinutes: dailyTrainingMinutes ?? this.dailyTrainingMinutes,
+      weeklyTrainingMinutes:
+          weeklyTrainingMinutes ?? this.weeklyTrainingMinutes,
+      weeklyTrainingCount: weeklyTrainingCount ?? this.weeklyTrainingCount,
+      weeklySteps: weeklySteps ?? this.weeklySteps,
+      weeklyDistanceKm: weeklyDistanceKm ?? this.weeklyDistanceKm,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       createdBy: createdBy ?? this.createdBy,
@@ -1452,6 +1509,8 @@ class NutritionEntry {
     required this.fat,
     required this.carbs,
     required this.note,
+    this.mealType = 'Posilek',
+    this.isCheatMeal = false,
     this.imageData,
     this.imageMimeType,
     required this.createdAt,
@@ -1472,6 +1531,11 @@ class NutritionEntry {
       fat: doubleFromJson(json['fat']),
       carbs: doubleFromJson(json['carbs']),
       note: json['note']?.toString() ?? '',
+      mealType:
+          json['mealType']?.toString() ??
+          json['meal_type']?.toString() ??
+          'Posilek',
+      isCheatMeal: boolFromJson(json['isCheatMeal'] ?? json['is_cheat_meal']),
       imageData: nullableString(json['imageData'] ?? json['image_data']),
       imageMimeType: nullableString(
         json['imageMimeType'] ?? json['image_mime_type'],
@@ -1496,6 +1560,8 @@ class NutritionEntry {
       fat: doubleFromJson(json['fat']),
       carbs: doubleFromJson(json['carbs']),
       note: json['note']?.toString() ?? '',
+      mealType: json['meal_type']?.toString() ?? 'Posilek',
+      isCheatMeal: boolFromJson(json['is_cheat_meal']),
       imageData: nullableString(json['image_data']),
       imageMimeType: nullableString(json['image_mime_type']),
       createdAt: dateFromJson(json['created_at']),
@@ -1515,6 +1581,8 @@ class NutritionEntry {
   final double fat;
   final double carbs;
   final String note;
+  final String mealType;
+  final bool isCheatMeal;
   final String? imageData;
   final String? imageMimeType;
   final DateTime createdAt;
@@ -1534,6 +1602,8 @@ class NutritionEntry {
       'fat': fat,
       'carbs': carbs,
       'note': note,
+      'mealType': mealType,
+      'isCheatMeal': isCheatMeal,
       'imageData': imageData,
       'imageMimeType': imageMimeType,
       'createdAt': createdAt.toIso8601String(),
@@ -1555,6 +1625,8 @@ class NutritionEntry {
       'fat': fat,
       'carbs': carbs,
       'note': note,
+      'meal_type': mealType,
+      'is_cheat_meal': isCheatMeal,
       'image_data': imageData,
       'image_mime_type': imageMimeType,
       'created_at': createdAt.toIso8601String(),
@@ -1574,6 +1646,8 @@ class NutritionEntry {
     double? fat,
     double? carbs,
     String? note,
+    String? mealType,
+    bool? isCheatMeal,
     String? imageData,
     String? imageMimeType,
     DateTime? createdAt,
@@ -1592,6 +1666,8 @@ class NutritionEntry {
       fat: fat ?? this.fat,
       carbs: carbs ?? this.carbs,
       note: note ?? this.note,
+      mealType: mealType ?? this.mealType,
+      isCheatMeal: isCheatMeal ?? this.isCheatMeal,
       imageData: imageData ?? this.imageData,
       imageMimeType: imageMimeType ?? this.imageMimeType,
       createdAt: createdAt ?? this.createdAt,
@@ -1611,6 +1687,8 @@ class TrainingEntry {
     required this.date,
     required this.activity,
     required this.durationMinutes,
+    this.steps = 0,
+    this.distanceKm = 0,
     required this.note,
     required this.createdAt,
     required this.updatedAt,
@@ -1629,6 +1707,8 @@ class TrainingEntry {
       durationMinutes: intFromJson(
         json['durationMinutes'] ?? json['duration_minutes'],
       ),
+      steps: intFromJson(json['steps']),
+      distanceKm: doubleFromJson(json['distanceKm'] ?? json['distance_km']),
       note: json['note']?.toString() ?? '',
       createdAt: dateFromJson(json['createdAt'] ?? json['created_at']),
       updatedAt: dateFromJson(json['updatedAt'] ?? json['updated_at']),
@@ -1647,6 +1727,8 @@ class TrainingEntry {
       date: dateFromJson(json['training_date']),
       activity: json['activity']?.toString() ?? 'Trening',
       durationMinutes: intFromJson(json['duration_minutes']),
+      steps: intFromJson(json['steps']),
+      distanceKm: doubleFromJson(json['distance_km']),
       note: json['note']?.toString() ?? '',
       createdAt: dateFromJson(json['created_at']),
       updatedAt: dateFromJson(json['updated_at']),
@@ -1662,6 +1744,8 @@ class TrainingEntry {
   final DateTime date;
   final String activity;
   final int durationMinutes;
+  final int steps;
+  final double distanceKm;
   final String note;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -1677,6 +1761,8 @@ class TrainingEntry {
       'date': date.toIso8601String(),
       'activity': activity,
       'durationMinutes': durationMinutes,
+      'steps': steps,
+      'distanceKm': distanceKm,
       'note': note,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
@@ -1694,6 +1780,8 @@ class TrainingEntry {
       'training_date': date.toIso8601String(),
       'activity': activity,
       'duration_minutes': durationMinutes,
+      'steps': steps,
+      'distance_km': distanceKm,
       'note': note,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -1709,6 +1797,8 @@ class TrainingEntry {
     DateTime? date,
     String? activity,
     int? durationMinutes,
+    int? steps,
+    double? distanceKm,
     String? note,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -1723,6 +1813,8 @@ class TrainingEntry {
       date: date ?? this.date,
       activity: activity ?? this.activity,
       durationMinutes: durationMinutes ?? this.durationMinutes,
+      steps: steps ?? this.steps,
+      distanceKm: distanceKm ?? this.distanceKm,
       note: note ?? this.note,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

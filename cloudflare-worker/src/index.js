@@ -1,4 +1,4 @@
-const schemaVersion = 8;
+const schemaVersion = 9;
 const defaultWorkersAiTextModel = "@cf/mistralai/mistral-small-3.1-24b-instruct";
 const defaultWorkersAiVisionModel = "@cf/meta/llama-3.2-11b-vision-instruct";
 const fallbackWorkersAiVisionModel = "@cf/llava-hf/llava-1.5-7b-hf";
@@ -151,6 +151,12 @@ const tables = {
       "daily_protein",
       "daily_fat",
       "daily_carbs",
+      "daily_steps",
+      "daily_training_minutes",
+      "weekly_training_minutes",
+      "weekly_training_count",
+      "weekly_steps",
+      "weekly_distance_km",
       "created_at",
       "updated_at",
       "created_by",
@@ -162,6 +168,12 @@ const tables = {
       "daily_protein",
       "daily_fat",
       "daily_carbs",
+      "daily_steps",
+      "daily_training_minutes",
+      "weekly_training_minutes",
+      "weekly_training_count",
+      "weekly_steps",
+      "weekly_distance_km",
     ],
   },
   nutrition_entries: {
@@ -175,6 +187,8 @@ const tables = {
       "fat",
       "carbs",
       "note",
+      "meal_type",
+      "is_cheat_meal",
       "image_data",
       "image_mime_type",
       "created_at",
@@ -182,7 +196,7 @@ const tables = {
       "created_by",
       "is_deleted",
     ],
-    boolColumns: ["is_deleted"],
+    boolColumns: ["is_cheat_meal", "is_deleted"],
     numberColumns: ["calories", "protein", "fat", "carbs"],
   },
   training_entries: {
@@ -193,6 +207,8 @@ const tables = {
       "training_date",
       "activity",
       "duration_minutes",
+      "steps",
+      "distance_km",
       "note",
       "created_at",
       "updated_at",
@@ -200,7 +216,7 @@ const tables = {
       "is_deleted",
     ],
     boolColumns: ["is_deleted"],
-    numberColumns: ["duration_minutes"],
+    numberColumns: ["duration_minutes", "steps", "distance_km"],
   },
   favorite_products: {
     columns: [
@@ -586,6 +602,9 @@ function defaultMissingValue(table, config, column) {
   }
   if (column === "activity") {
     return "Trening";
+  }
+  if (column === "meal_type") {
+    return "Posilek";
   }
   if (column === "store_name") {
     return "Sklep";
