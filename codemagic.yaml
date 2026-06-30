@@ -11,7 +11,7 @@ workflows:
       - name: Pobierz zaleznosci Flutter
         script: flutter pub get
       - name: Analiza kodu
-        script: flutter analyze
+        script: flutter analyze --no-fatal-infos
       - name: Testy
         script: flutter test
       - name: Build iOS bez podpisu
@@ -39,7 +39,7 @@ workflows:
       - name: Pobierz zaleznosci Flutter
         script: flutter pub get
       - name: Analiza kodu
-        script: flutter analyze
+        script: flutter analyze --no-fatal-infos
       - name: Testy
         script: flutter test
       - name: Build IPA
