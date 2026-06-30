@@ -1,0 +1,53 @@
+workflows:
+  ios_unsigned_check:
+    name: iOS - sprawdzenie bez podpisu
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Pobierz zaleznosci Flutter
+        script: flutter pub get
+      - name: Analiza kodu
+        script: flutter analyze
+      - name: Testy
+        script: flutter test
+      - name: Build iOS bez podpisu
+        script: flutter build ios --release --no-codesign
+    artifacts:
+      - build/ios/iphoneos/Runner.app
+      - /tmp/xcodebuild_logs/*.log
+
+  ios_testflight:
+    name: iOS - TestFlight
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: Apple Developer
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: pl.rodzina.rodzinnaListaZakupow
+    scripts:
+      - name: Przygotuj podpis iOS
+        script: xcode-project use-profiles
+      - name: Pobierz zaleznosci Flutter
+        script: flutter pub get
+      - name: Analiza kodu
+        script: flutter analyze
+      - name: Testy
+        script: flutter test
+      - name: Build IPA
+        script: flutter build ipa --release --export-options-plist=$CM_EXPORT_OPTIONS_PLIST
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
