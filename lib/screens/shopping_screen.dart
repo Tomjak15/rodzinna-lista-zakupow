@@ -50,6 +50,10 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
             onShopModeChanged: (value) => setState(() => _shopMode = value),
             onOpenFavorites: () => _openFavoritesSheet(context),
           ),
+          _ShoppingSummaryCard(
+            openCount: openItems.length,
+            purchasedCount: purchasedItems.length,
+          ),
           if (_shopMode)
             _ShopModeBanner(
               count: openItems.length,
@@ -274,6 +278,61 @@ class _ShoppingToolbar extends StatelessWidget {
             label: const Text('Ulubione'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ShoppingSummaryCard extends StatelessWidget {
+  const _ShoppingSummaryCard({
+    required this.openCount,
+    required this.purchasedCount,
+  });
+
+  final int openCount;
+  final int purchasedCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      color: scheme.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: scheme.primary,
+              foregroundColor: scheme.onPrimary,
+              child: const Icon(Icons.shopping_basket_outlined),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    openCount == 0
+                        ? 'Lista gotowa'
+                        : '$openCount rzeczy do kupienia',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onPrimaryContainer,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    purchasedCount == 0
+                        ? 'Kupione produkty pojawią się osobno.'
+                        : '$purchasedCount już kupione',
+                    style: TextStyle(color: scheme.onPrimaryContainer),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

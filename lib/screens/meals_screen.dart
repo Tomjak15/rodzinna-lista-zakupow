@@ -46,52 +46,28 @@ class _MealsScreenState extends State<MealsScreen> {
             onChanged: (category) =>
                 setState(() => _selectedCategory = category),
           ),
+          _RecipeActionCard(
+            aiScanning: _aiScanning,
+            onScanCamera: () => _scanRecipeWithAi(context, fromGallery: false),
+            onScanGallery: () => _scanRecipeWithAi(context, fromGallery: true),
+          ),
           if (meals.isEmpty)
             const _EmptyMeals()
           else
             ...meals.map((meal) => _MealTile(meal: meal)),
         ],
       ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          FloatingActionButton.extended(
-            heroTag: 'scan-recipe-ai',
-            onPressed: _aiScanning
-                ? null
-                : () => _scanRecipeWithAi(context, fromGallery: false),
-            icon: _aiScanning
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.document_scanner_outlined),
-            label: const Text('Skanuj AI'),
-          ),
-          const SizedBox(height: 12),
-          FloatingActionButton.extended(
-            heroTag: 'scan-recipe-ai-gallery',
-            onPressed: _aiScanning
-                ? null
-                : () => _scanRecipeWithAi(context, fromGallery: true),
-            icon: const Icon(Icons.photo_library_outlined),
-            label: const Text('AI z galerii'),
-          ),
-          const SizedBox(height: 12),
-          FloatingActionButton.extended(
-            heroTag: 'add-recipe',
-            onPressed: () async {
-              final savedMeal = await _openMealDialog(context);
-              if (!mounted || savedMeal == null) {
-                return;
-              }
-              _showSavedRecipe(savedMeal);
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Dodaj przepis'),
-          ),
-        ],
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'add-recipe',
+        onPressed: () async {
+          final savedMeal = await _openMealDialog(context);
+          if (!mounted || savedMeal == null) {
+            return;
+          }
+          _showSavedRecipe(savedMeal);
+        },
+        icon: const Icon(Icons.add),
+        label: const Text('Dodaj'),
       ),
     );
   }
@@ -272,6 +248,75 @@ class _RecipeCategoryBar extends StatelessWidget {
               ),
             )
             .toList(),
+      ),
+    );
+  }
+}
+
+class _RecipeActionCard extends StatelessWidget {
+  const _RecipeActionCard({
+    required this.aiScanning,
+    required this.onScanCamera,
+    required this.onScanGallery,
+  });
+
+  final bool aiScanning;
+  final VoidCallback onScanCamera;
+  final VoidCallback onScanGallery;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: scheme.secondaryContainer,
+                  foregroundColor: scheme.onSecondaryContainer,
+                  child: aiScanning
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.auto_awesome),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    aiScanning
+                        ? 'Czytam przepis...'
+                        : 'Szybkie dodawanie przepisu',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.tonalIcon(
+                  onPressed: aiScanning ? null : onScanCamera,
+                  icon: const Icon(Icons.document_scanner_outlined),
+                  label: const Text('Skanuj aparatem'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: aiScanning ? null : onScanGallery,
+                  icon: const Icon(Icons.photo_library_outlined),
+                  label: const Text('Z galerii'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

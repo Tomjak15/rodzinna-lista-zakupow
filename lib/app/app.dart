@@ -33,21 +33,22 @@ class RodzinnaListaApp extends StatelessWidget {
   ThemeData _buildTheme() {
     final scheme =
         ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2F7D5A),
+          seedColor: const Color(0xFF24715A),
           brightness: Brightness.light,
         ).copyWith(
-          primary: const Color(0xFF2F7D5A),
-          secondary: const Color(0xFFE07A5F),
-          tertiary: const Color(0xFFF2CC5D),
-          surface: const Color(0xFFFFFCF4),
+          primary: const Color(0xFF24715A),
+          secondary: const Color(0xFFB86B45),
+          tertiary: const Color(0xFF6C7A2F),
+          surface: const Color(0xFFFFFCF7),
+          surfaceContainerHighest: const Color(0xFFF0ECE2),
         );
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      scaffoldBackgroundColor: const Color(0xFFFBF8EF),
+      scaffoldBackgroundColor: const Color(0xFFFAF7EF),
       appBarTheme: const AppBarTheme(
         centerTitle: false,
-        backgroundColor: Color(0xFFFBF8EF),
+        backgroundColor: Color(0xFFFAF7EF),
         surfaceTintColor: Colors.transparent,
       ),
       cardTheme: const CardThemeData(
@@ -58,20 +59,50 @@ class RodzinnaListaApp extends StatelessWidget {
           side: BorderSide(color: Color(0xFFE5DDCE)),
         ),
       ),
-      inputDecorationTheme: const InputDecorationTheme(
-        border: OutlineInputBorder(
+      listTileTheme: const ListTileThemeData(
+        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.all(Radius.circular(8)),
         ),
       ),
+      inputDecorationTheme: const InputDecorationTheme(
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(8)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(8)),
+          borderSide: BorderSide(color: Color(0xFFE5DDCE)),
+        ),
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        indicatorColor: scheme.primaryContainer,
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: scheme.primary,
+        foregroundColor: scheme.onPrimary,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
+          minimumSize: const Size(48, 44),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
+          minimumSize: const Size(48, 44),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
+      ),
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        side: const BorderSide(color: Color(0xFFE5DDCE)),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
